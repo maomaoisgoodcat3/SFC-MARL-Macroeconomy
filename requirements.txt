@@ -1,0 +1,18 @@
+# Multi-Agent Reinforcement Learning & Deep Learning Core
+ray[rllib]>=2.10.0,<2.35.0
+torch>=2.1.0,<2.4.0
+gymnasium>=0.28.1,<1.0.0
+numpy>=1.24.0,<2.0.0
+
+# Data Engineering & High-Performance Parquet Storage
+pandas>=2.0.0
+pyarrow>=14.0.0
+
+# Presentation Layer & WebSocket/REST Telemetry Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+websockets>=12.0
+
+# System Profiling & Hardware Monitoring
+gputil>=1.4.0

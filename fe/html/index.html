@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Institutional AI Economist | Research Simulation Dashboard</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <!-- Cac thu vien truc quan hoa tieu chuan -->
+    <script src="https://unpkg.com/force-graph"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- HEADER & DIEU KHIEN CHINH -->
+        <header class="top-nav">
+            <div class="brand">
+                <span class="system-title">INSTITUTIONAL AI ECONOMIST</span>
+                <span class="version-tag">RESEARCH ENGINE v1.0</span>
+            </div>
+            
+            <div class="simulation-controls">
+                <button id="btn-play" class="btn btn-primary">RUN</button>
+                <button id="btn-pause" class="btn btn-secondary">PAUSE</button>
+                <button id="btn-step" class="btn btn-secondary">STEP</button>
+                <button id="btn-reset" class="btn btn-danger">RESET</button>
+                
+                <div class="control-group">
+                    <label for="speed-slider">Speed</label>
+                    <input type="range" id="speed-slider" min="20" max="1000" value="200" step="20">
+                    <span id="speed-display">200ms</span>
+                </div>
+
+                <div class="control-group">
+                    <label for="checkpoint-select">Checkpoint</label>
+                    <select id="checkpoint-select">
+                        <option value="">Live Model (Initial)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="status-indicator">
+                <span class="status-dot" id="connection-dot"></span>
+                <span id="connection-status">DISCONNECTED</span>
+            </div>
+        </header>
+
+        <!-- KHU VUC HIEN THI TRANG THAI CHINH -->
+        <main class="main-content">
+            <!-- COT TRAI: DO THI TOPO THI TRUONG -->
+            <section class="viewport-card graph-section">
+                <div class="card-header">
+                    <h2>Market Network Topology</h2>
+                    <div class="legend-inline">
+                        <span class="legend-tag lg-gov">Gov</span>
+                        <span class="legend-tag lg-bank">Bank</span>
+                        <span class="legend-tag lg-eco">Economy</span>
+                        <span class="legend-tag lg-sup">Supervisor</span>
+                        <span class="legend-tag lg-firm">Firm</span>
+                        <span class="legend-tag lg-emp">Employee</span>
+                    </div>
+                </div>
+                <div id="topology-graph" class="graph-viewport"></div>
+            </section>
+
+            <!-- COT PHAI: CAC BANG DIEU KHIEN VI MO VA DONG THOI GIAN -->
+            <aside class="sidebar-panels">
+                <!-- PANEL CHI SO VI MO -->
+                <div class="viewport-card metrics-card">
+                    <div class="card-header">
+                        <h2>Macroeconomic Telemetry</h2>
+                        <span class="metric-badge">Month <b id="metric-month">0</b></span>
+                    </div>
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <span class="m-label">Gross Domestic Product</span>
+                            <span class="m-value" id="val-gdp">$0.00</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="m-label">Gini Coefficient</span>
+                            <span class="m-value" id="val-gini">0.000</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="m-label">Market Inflation</span>
+                            <span class="m-value" id="val-inflation">0.00%</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="m-label">Living Cost Base</span>
+                            <span class="m-value" id="val-cost">$0.00</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="m-label">Active Population</span>
+                            <span class="m-value" id="val-pop">0 / 0</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="m-label">Bank Liquidity / NPL</span>
+                            <span class="m-value" id="val-bank">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PANEL DO THI CHUOI THOI GIAN -->
+                <div class="viewport-card chart-card">
+                    <div class="card-header">
+                        <h2>Macro Historical Series</h2>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="macroSeriesChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- PANEL SO CAI SU KIEN THUC TE -->
+                <div class="viewport-card logs-card">
+                    <div class="card-header">
+                        <h2>Institutional Ledger Stream</h2>
+                        <span class="log-counter" id="log-count">0 events</span>
+                    </div>
+                    <div class="log-stream" id="log-stream-container">
+                        <!-- Du lieu su kien append truc tiep tai day -->
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- FOOTER: CHI TIET TAC TU DUOC CHON -->
+        <footer class="inspector-footer">
+            <div class="inspector-title">Agent Telemetry Inspector:</div>
+            <div id="inspector-content" class="inspector-details">
+                <span class="text-muted">Click any agent node on the topology graph to inspect its microeconomic state.</span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>
