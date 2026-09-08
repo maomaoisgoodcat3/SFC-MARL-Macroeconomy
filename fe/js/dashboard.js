@@ -1,4 +1,3 @@
-// Khoi tao trang thai toan cuc
 const state = {
     agents: {},
     macro: {},
@@ -11,7 +10,6 @@ const state = {
     selectedAgentId: null
 };
 
-// Bang mau tac tu
 const AGENT_COLORS = {
     'government': '#f85149',
     'bank': '#d29922',
@@ -21,108 +19,131 @@ const AGENT_COLORS = {
     'employee': '#3fb950'
 };
 
-// 1. KHOI TAO CHARTS (CHART.JS)
-const ctx = document.getElementById('macroSeriesChart').getContext('2d');
-const macroChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-        labels: [],
-        datasets: [
-            {
-                label: 'GDP ($)',
-                data: [],
-                borderColor: '#58a6ff',
-                backgroundColor: 'rgba(88, 166, 255, 0.1)',
-                yAxisID: 'y',
-                borderWidth: 1.5,
-                tension: 0.2,
-                pointRadius: 0
-            },
-            {
-                label: 'Gini Index',
-                data: [],
-                borderColor: '#f85149',
-                borderDash: [3, 3],
-                yAxisID: 'y1',
-                borderWidth: 1.5,
-                tension: 0.2,
-                pointRadius: 0
-            }
-        ]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        scales: {
-            x: { grid: { color: '#1e2533' }, ticks: { color: '#8b949e', font: { size: 10 } } },
-            y: { position: 'left', grid: { color: '#1e2533' }, ticks: { color: '#58a6ff', font: { size: 10 } } },
-            y1: { position: 'right', min: 0, max: 1, grid: { drawOnChartArea: false }, ticks: { color: '#f85149', font: { size: 10 } } }
+const isServedByFastAPI = window.location.port === '8000';
+const BACKEND_HTTP = isServedByFastAPI ? '' : 'http://127.0.0.1:8000';
+const BACKEND_WS_HOST = isServedByFastAPI ? window.location.host : '127.0.0.1:8000';
+
+// 1. KHOI TAO CHARTS (AN TOAN VOI NULL CHECK)
+let macroChart = null;
+const chartCanvas = document.getElementById('macroSeriesChart');
+if (chartCanvas && typeof Chart !== 'undefined') {
+    const ctx = chartCanvas.getContext('2d');
+    macroChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'GDP ($)',
+                    data: [],
+                    borderColor: '#58a6ff',
+                    backgroundColor: 'rgba(88, 166, 255, 0.1)',
+                    yAxisID: 'y',
+                    borderWidth: 1.5,
+                    tension: 0.2,
+                    pointRadius: 0
+                },
+                {
+                    label: 'Gini Index',
+                    data: [],
+                    borderColor: '#f85149',
+                    borderDash: [3, 3],
+                    yAxisID: 'y1',
+                    borderWidth: 1.5,
+                    tension: 0.2,
+                    pointRadius: 0
+                }
+            ]
         },
-        plugins: {
-            legend: { labels: { color: '#8b949e', boxWidth: 12, font: { size: 10 } } }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+                x: { grid: { color: '#1e2533' }, ticks: { color: '#8b949e', font: { size: 10 } } },
+                y: { position: 'left', grid: { color: '#1e2533' }, ticks: { color: '#58a6ff', font: { size: 10 } } },
+                y1: { position: 'right', min: 0, max: 1, grid: { drawOnChartArea: false }, ticks: { color: '#f85149', font: { size: 10 } } }
+            },
+            plugins: {
+                legend: { labels: { color: '#8b949e', boxWidth: 12, font: { size: 10 } } }
+            }
         }
-    }
-});
+    });
+}
 
 // 2. KHOI TAO NETWORK FORCE GRAPH
+let graph = null;
 const graphContainer = document.getElementById('topology-graph');
-const graph = ForceGraph()(graphContainer)
-    .nodeId('id')
-    .nodeLabel(node => `${node.id} (${node.type.toUpperCase()})\nCash: $${Math.round(node.cash || 0)}`)
-    .nodeColor(node => AGENT_COLORS[node.type] || '#888')
-    .nodeRelSize(node => ['government', 'bank', 'economy', 'supervisor'].includes(node.type) ? 8 : 4)
-    .linkColor(link => {
-        if (link.type === 'HIRE' || link.type === 'WAGE_PAID') return 'rgba(88, 166, 255, 0.4)';
-        if (link.type === 'LOAN_DISBURSED') return 'rgba(210, 153, 34, 0.6)';
-        if (link.type === 'PENALTY_ENFORCED') return 'rgba(163, 113, 247, 0.6)';
-        return 'rgba(255, 255, 255, 0.15)';
-    })
-    .linkWidth(link => ['LOAN_DISBURSED', 'PENALTY_ENFORCED'].includes(link.type) ? 2 : 1)
-    .linkDirectionalParticles(link => link.type === 'WAGE_PAID' ? 2 : 0)
-    .linkDirectionalParticleSpeed(0.01)
-    .onNodeClick(node => inspectAgent(node.id))
-    .d3Force('charge', d3.forceManyBody().strength(-40))
-    .d3Force('radial', d3.forceRadial(180, 0, 0).strength(0.05));
+if (graphContainer && typeof ForceGraph !== 'undefined') {
+    graph = ForceGraph()(graphContainer)
+        .nodeId('id')
+        .nodeLabel(node => `${node.id} (${node.type.toUpperCase()})\nCash: $${Math.round(node.cash || 0)}`)
+        .nodeColor(node => AGENT_COLORS[node.type] || '#888')
+        .nodeRelSize(node => ['government', 'bank', 'economy', 'supervisor'].includes(node.type) ? 8 : 4)
+        .linkColor(link => {
+            if (link.type === 'HIRE' || link.type === 'WAGE_PAID') return 'rgba(88, 166, 255, 0.4)';
+            if (link.type === 'LOAN_DISBURSED') return 'rgba(210, 153, 34, 0.6)';
+            if (link.type === 'PENALTY_ENFORCED') return 'rgba(163, 113, 247, 0.6)';
+            return 'rgba(255, 255, 255, 0.15)';
+        })
+        .linkWidth(link => ['LOAN_DISBURSED', 'PENALTY_ENFORCED'].includes(link.type) ? 2 : 1)
+        .linkDirectionalParticles(link => link.type === 'WAGE_PAID' ? 2 : 0)
+        .linkDirectionalParticleSpeed(0.01)
+        .onNodeClick(node => inspectAgent(node.id));
 
-function resizeGraph() {
-    graph.width(graphContainer.clientWidth);
-    graph.height(graphContainer.clientHeight);
+    // Kiem tra an toan truoc khi kich hoat cac luc keo cua D3
+    if (typeof d3 !== 'undefined') {
+        graph.d3Force('charge', d3.forceManyBody().strength(-40))
+             .d3Force('radial', d3.forceRadial(180, 0, 0).strength(0.05));
+    }
+
+    function resizeGraph() {
+        if (graph && graphContainer) {
+            graph.width(graphContainer.clientWidth);
+            graph.height(graphContainer.clientHeight);
+        }
+    }
+    window.addEventListener('resize', resizeGraph);
+    setTimeout(resizeGraph, 100);
 }
-window.addEventListener('resize', resizeGraph);
-setTimeout(resizeGraph, 100);
 
 // 3. CAP NHAT GIAO DIEN
 function updateDashboardUI(payload) {
-    document.getElementById('metric-month').innerText = payload.timestep;
+    const monthEl = document.getElementById('metric-month');
+    if (monthEl) monthEl.innerText = payload.timestep;
     
     const m = payload.macro;
     if (m) {
-        document.getElementById('val-gdp').innerText = `$${Math.round(m.gdp).toLocaleString()}`;
-        document.getElementById('val-gini').innerText = (m.gini || 0).toFixed(3);
-        document.getElementById('val-inflation').innerText = `${((m.inflation || 0) * 100).toFixed(2)}%`;
-        document.getElementById('val-cost').innerText = `$${(m.living_cost || 0).toFixed(1)}`;
-        document.getElementById('val-pop').innerText = `${m.active_employees || 0} / ${m.active_firms || 0}F`;
-        document.getElementById('val-bank').innerText = `$${Math.round(m.bank_reserves).toLocaleString()} (NPL: $${Math.round(m.npl)})`;
+        const setVal = (id, text) => {
+            const el = document.getElementById(id);
+            if (el) el.innerText = text;
+        };
 
-        // Update Series
-        state.history.months.push(payload.timestep);
-        state.history.gdp.push(m.gdp);
-        state.history.gini.push(m.gini);
+        setVal('val-gdp', `$${Math.round(m.gdp).toLocaleString()}`);
+        setVal('val-gini', (m.gini || 0).toFixed(3));
+        setVal('val-inflation', `${((m.inflation || 0) * 100).toFixed(2)}%`);
+        setVal('val-cost', `$${(m.living_cost || 0).toFixed(1)}`);
+        setVal('val-pop', `${m.active_employees || 0} / ${m.active_firms || 0}F`);
+        setVal('val-bank', `$${Math.round(m.bank_reserves).toLocaleString()} (NPL: $${Math.round(m.npl)})`);
 
-        if (state.history.months.length > 50) {
-            state.history.months.shift();
-            state.history.gdp.shift();
-            state.history.gini.shift();
+        if (macroChart) {
+            state.history.months.push(payload.timestep);
+            state.history.gdp.push(m.gdp);
+            state.history.gini.push(m.gini);
+
+            if (state.history.months.length > 50) {
+                state.history.months.shift();
+                state.history.gdp.shift();
+                state.history.gini.shift();
+            }
+
+            macroChart.data.labels = state.history.months;
+            macroChart.data.datasets[0].data = state.history.gdp;
+            macroChart.data.datasets[1].data = state.history.gini;
+            macroChart.update();
         }
-
-        macroChart.data.labels = state.history.months;
-        macroChart.data.datasets[0].data = state.history.gdp;
-        macroChart.data.datasets[1].data = state.history.gini;
-        macroChart.update();
     }
 
-    // Cap nhat Agent Nodes
     state.agents = payload.agents || {};
     const nodes = Object.values(state.agents).map(a => ({
         id: a.agent_id,
@@ -131,7 +152,6 @@ function updateDashboardUI(payload) {
         status: a.status
     }));
 
-    // Cap nhat Links tu Events
     if (payload.events && payload.events.length > 0) {
         payload.events.forEach(e => {
             appendLog(e);
@@ -144,13 +164,13 @@ function updateDashboardUI(payload) {
         });
     }
 
-    // Giam thoi gian ton tai cua cac ket noi hieu ung
     state.links.forEach(l => l.expire--);
     state.links = state.links.filter(l => l.expire > 0);
 
-    graph.graphData({ nodes, links: state.links });
+    if (graph) {
+        graph.graphData({ nodes, links: state.links });
+    }
 
-    // Refresh Inspector neu dang inspect 1 agent
     if (state.selectedAgentId && state.agents[state.selectedAgentId]) {
         inspectAgent(state.selectedAgentId);
     }
@@ -158,6 +178,8 @@ function updateDashboardUI(payload) {
 
 function appendLog(e) {
     const stream = document.getElementById('log-stream-container');
+    if (!stream) return;
+
     const entry = document.createElement('div');
     entry.className = `log-entry ${e.type}`;
     entry.innerText = `[M${e.timestep}] ${e.type}: ${e.source} -> ${e.target} | ${JSON.stringify(e.payload)}`;
@@ -166,13 +188,16 @@ function appendLog(e) {
     if (stream.children.length > 80) {
         stream.removeChild(stream.lastChild);
     }
-    document.getElementById('log-count').innerText = `${stream.children.length} events`;
+    const countEl = document.getElementById('log-count');
+    if (countEl) countEl.innerText = `${stream.children.length} events`;
 }
 
 function inspectAgent(agentId) {
     state.selectedAgentId = agentId;
     const a = state.agents[agentId];
     const container = document.getElementById('inspector-content');
+    if (!container) return;
+
     if (!a) {
         container.innerHTML = `<span class="text-muted">Agent ${agentId} is no longer active.</span>`;
         return;
@@ -196,56 +221,82 @@ function inspectAgent(agentId) {
 // 4. DIEU KHIEN REST API
 async function sendControl(action, value = null) {
     try {
-        await fetch('/api/control', {
+        await fetch(`${BACKEND_HTTP}/api/control`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action, value })
         });
     } catch (err) {
-        console.error('Failed to dispatch control:', err);
+        console.error('[FE] Failed to dispatch control:', err);
     }
 }
 
-document.getElementById('btn-play').addEventListener('click', () => sendControl('PLAY'));
-document.getElementById('btn-pause').addEventListener('click', () => sendControl('PAUSE'));
-document.getElementById('btn-step').addEventListener('click', () => sendControl('STEP'));
-document.getElementById('btn-reset').addEventListener('click', () => {
+const bindClick = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn);
+};
+
+bindClick('btn-play', () => sendControl('PLAY'));
+bindClick('btn-pause', () => sendControl('PAUSE'));
+bindClick('btn-step', () => sendControl('STEP'));
+bindClick('btn-reset', () => {
     state.history.months = [];
     state.history.gdp = [];
     state.history.gini = [];
-    document.getElementById('log-stream-container').innerHTML = '';
+    const stream = document.getElementById('log-stream-container');
+    if (stream) stream.innerHTML = '';
     sendControl('RESET');
 });
 
-document.getElementById('speed-slider').addEventListener('input', (e) => {
-    const val = e.target.value;
-    document.getElementById('speed-display').innerText = `${val}ms`;
-    sendControl('SET_SPEED', val / 1000.0);
-});
+const speedSlider = document.getElementById('speed-slider');
+if (speedSlider) {
+    speedSlider.addEventListener('input', (e) => {
+        const val = e.target.value;
+        const display = document.getElementById('speed-display');
+        if (display) display.innerText = `${val}ms`;
+        sendControl('SET_SPEED', val / 1000.0);
+    });
+}
 
-// 5. WEBSOCKET CONNECTION
+// 5. KET NOI WEBSOCKET
+let ws = null;
 function initWebSocket() {
-    const ws = new WebSocket(`ws://${window.location.host}/ws/stream`);
+    const wsUrl = `ws://${BACKEND_WS_HOST}/ws/stream`;
+    console.log(`[FE] Connecting to WebSocket: ${wsUrl}`);
+    
     const dot = document.getElementById('connection-dot');
     const label = document.getElementById('connection-status');
 
-    ws.onopen = () => {
-        dot.classList.add('connected');
-        label.innerText = 'ONLINE';
-    };
+    try {
+        ws = new WebSocket(wsUrl);
 
-    ws.onmessage = (event) => {
-        const payload = JSON.parse(event.data);
-        if (payload.type === 'SIMULATION_TICK' || payload.type === 'INIT_STATE' || payload.type === 'SIMULATION_RESET') {
-            updateDashboardUI(payload);
-        }
-    };
+        ws.onopen = () => {
+            console.log('[FE] WebSocket connection established successfully.');
+            if (dot) dot.classList.add('connected');
+            if (label) label.innerText = 'ONLINE';
+        };
 
-    ws.onclose = () => {
-        dot.classList.remove('connected');
-        label.innerText = 'OFFLINE';
+        ws.onmessage = (event) => {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'SIMULATION_TICK' || payload.type === 'INIT_STATE' || payload.type === 'SIMULATION_RESET') {
+                updateDashboardUI(payload);
+            }
+        };
+
+        ws.onclose = () => {
+            if (dot) dot.classList.remove('connected');
+            if (label) label.innerText = 'DISCONNECTED';
+            setTimeout(initWebSocket, 2000);
+        };
+
+        ws.onerror = (err) => {
+            console.warn('[FE] WebSocket connection error:', err);
+            ws.close();
+        };
+    } catch (e) {
+        console.error('[FE] Initialization error:', e);
         setTimeout(initWebSocket, 2000);
-    };
+    }
 }
 
 initWebSocket();

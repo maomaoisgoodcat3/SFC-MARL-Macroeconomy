@@ -3,7 +3,8 @@ import asyncio
 import json
 import logging
 from typing import Dict, Any, List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -16,7 +17,19 @@ logger = logging.getLogger("InstitutionalEconomist.Server")
 
 app = FastAPI(title="Institutional AI Economist Control Server")
 
-# Mount thu muc frontend tinh
+# Kich hoat CORS de Frontend ket noi duoc tu moi Port (Live Server 5500, Localhost, v.v.)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+os.makedirs("fe/css", exist_ok=True)
+os.makedirs("fe/js", exist_ok=True)
+os.makedirs("fe/assets", exist_ok=True)
+
 app.mount("/css", StaticFiles(directory="fe/css"), name="css")
 app.mount("/js", StaticFiles(directory="fe/js"), name="js")
 if os.path.exists("fe/assets"):
@@ -32,7 +45,6 @@ class SimulationController:
         self.current_step: int = 0
         self.active_connections: List[WebSocket] = []
         
-        # Dang ky lang nghe Event Bus
         for event_type in self.env.event_bus._subscribers.keys():
             self.env.event_bus.subscribe(event_type, self.logger.log_event_for_ui)
         
@@ -55,7 +67,6 @@ class SimulationController:
             if self.is_running:
                 self.current_step += 1
                 
-                # Heuristic inference cho che do demo truc quan
                 actions = {}
                 for agent_id, agent in self.env.agents.items():
                     raw_state = self.env.get_raw_environment_state()
@@ -64,8 +75,8 @@ class SimulationController:
                     actions[agent_id] = agent_act.values
 
                 obs, rewards, terminateds, truncateds, infos = self.env.step(actions)
-                
                 world_state = self.env.export_full_world_state()
+                
                 events = [
                     {
                         "type": e["type"],
@@ -115,7 +126,6 @@ async def handle_control(req: ControlRequest):
         sim_controller.is_running = False
     elif req.action == "STEP":
         sim_controller.is_running = False
-        # Chay dung 1 step
         actions = {}
         for aid, agent in sim_controller.env.agents.items():
             obs = agent.observe(sim_controller.env.get_raw_environment_state())
@@ -152,15 +162,15 @@ async def list_checkpoints():
     if not os.path.exists(cp_dir):
         return {"checkpoints": []}
     dirs = [d for d in os.listdir(cp_dir) if d.startswith("iter_")]
-    dirs.sort(key=lambda x: int(x.split("_")[1]) if x.split("_")[1].isdigit() else 0)
+    dirs.sort(key=lambda x: int(x.split("_")[1]) if len(x.split("_")) > 1 and x.split("_")[1].isdigit() else 0)
     return {"checkpoints": dirs}
 
 @app.websocket("/ws/stream")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     sim_controller.active_connections.append(websocket)
+    logger.info(f"[SERVER] Client UI connected. Total connections: {len(sim_controller.active_connections)}")
     try:
-        # Gui ngay trang thai hien tai cho client vua ket noi
         state = sim_controller.env.export_full_world_state()
         await websocket.send_text(json.dumps({
             "type": "INIT_STATE",
@@ -174,3 +184,4 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         if websocket in sim_controller.active_connections:
             sim_controller.active_connections.remove(websocket)
+            logger.info("[SERVER] Client UI disconnected.")

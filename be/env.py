@@ -29,11 +29,13 @@ class MacroEnvironment:
         self.max_steps: int = max_steps
         self.timestep: int = 0
 
+        # Quan ly tap hop tac tu da duoc bao cao tu vong de cach ly khoi RLlib
+        self.reported_dead_agents: set = set()
+
         # He thong su kien va hien phap
         self.event_bus: EventBus = EventBus()
         self.rule_engine: RuleEngine = RuleEngine(event_bus=self.event_bus)
 
-        # Danh sach tac tu toan he thong
         self.agents: Dict[str, BaseAgent] = {}
         self._create_world()
 
@@ -63,13 +65,11 @@ class MacroEnvironment:
             self.agents[e_id] = Employee(agent_id=e_id)
 
     def reset(self, seed: Optional[int] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
-        """
-        Khoi phuc trang thai ban dau cua toan bo nen kinh te cho Episode moi.
-        """
         if seed is not None:
             np.random.seed(seed)
 
         self.timestep = 0
+        self.reported_dead_agents.clear()
         self.event_bus.clear()
 
         # Khoi tao the che vi mo
@@ -78,7 +78,6 @@ class MacroEnvironment:
         self.eco.initialize(initial_living_cost=15.0, initial_housing_inventory=100, initial_house_price=1000.0)
         self.sup.initialize(initial_budget=50000.0, initial_audit_rate=0.05, initial_fine_multiplier=1.5)
 
-        # Khoi tao Firm voi thong so ngau nhien phu hop thuc te
         for agent in self.agents.values():
             if isinstance(agent, Firm):
                 agent.initialize(
@@ -87,10 +86,7 @@ class MacroEnvironment:
                     tax_morale=float(np.random.uniform(0.4, 0.9)),
                     initial_capital=float(np.random.uniform(3000.0, 5000.0))
                 )
-
-        # Khoi tao Employee voi ho so tam ly va the chat da dang
-        for agent in self.agents.values():
-            if isinstance(agent, Employee):
+            elif isinstance(agent, Employee):
                 agent.initialize(
                     skill_level=float(np.random.uniform(0.8, 2.0)),
                     risk_aversion=float(np.random.uniform(0.3, 0.8)),
@@ -118,24 +114,19 @@ class MacroEnvironment:
         Dict[str, bool], 
         Dict[str, Any]
     ]:
-        """
-        Thuc thi mot thang mo phong tuan tu theo dung SAS v1.0:
-        Current State -> Observation -> Policy -> Action -> Rule Validation 
-        -> Transition -> Reward -> Logging -> Next State
-        """
         self.timestep += 1
 
-        # 1. Chuyen doi cac vector raw actions thanh Action Objects
+        # 1. Chi tiep nhan hanh dong tu cac tac tu con song
         actions: Dict[str, Action] = {}
         for agent_id, raw_vals in action_dict.items():
-            if agent_id in self.agents:
+            if agent_id in self.agents and agent_id not in self.reported_dead_agents:
                 actions[agent_id] = Action(
                     agent_id=agent_id,
                     action_type="STEP_ACTION",
                     values=np.asarray(raw_vals, dtype=np.float32)
                 )
 
-        # 2. Rule Validation: Tung Agent tu xac thuc hanh vi noi tai
+        # 2. Xac thuc hanh dong
         validated_actions: Dict[str, Action] = {}
         for agent_id, action in actions.items():
             agent = self.agents[agent_id]
@@ -148,47 +139,58 @@ class MacroEnvironment:
                     metadata={"is_valid": val_res.is_valid, "reason": val_res.reason}
                 )
 
-        # 3. Transition: RuleEngine thuc thi luat kinh te va phap ly
+        # 3. RuleEngine thuc thi chu ky
         transition_results: Dict[str, TransitionResult] = self.rule_engine.execute_cycle(
             agents=self.agents,
             validated_actions=validated_actions,
             timestep=self.timestep
         )
 
-        # 4. Cap nhat trang thai noi tai (Apply Result)
+        # 4. Cap nhat ket qua noi tai
         for agent_id, trans_res in transition_results.items():
-            agent = self.agents[agent_id]
-            agent.apply_result(trans_res)
+            self.agents[agent_id].apply_result(trans_res)
 
-        # 5. Reward: Tung Agent tu tinh toan Reward (Env tuyet doi khong can thiep)
-        rewards: Dict[str, float] = {}
+        # 5. Tinh toan Reward
+        rewards_all: Dict[str, float] = {}
         for agent_id, trans_res in transition_results.items():
-            agent = self.agents[agent_id]
-            rewards[agent_id] = agent.calculate_reward(trans_res)
+            rewards_all[agent_id] = self.agents[agent_id].calculate_reward(trans_res)
 
-        # 6. Next State & Observations
+        # 6. Dong goi quan sat va xu ly che do MultiAgentEnv chuan
         raw_state = self.get_raw_environment_state()
+        is_time_up = self.timestep >= self.max_steps
+
         observations: Dict[str, np.ndarray] = {}
+        rewards: Dict[str, float] = {}
+        terminateds: Dict[str, bool] = {}
+        truncateds: Dict[str, bool] = {}
         infos: Dict[str, Any] = {}
 
         for agent_id, agent in self.agents.items():
-            obs = agent.observe(raw_state)
-            observations[agent_id] = obs.vector
-            infos[agent_id] = {
-                "status": agent.status.name,
-                "events": transition_results[agent_id].events_triggered
-            }
+            # Neu tac tu da duoc bao cao chet tu truoc, bo qua hoan toan
+            if agent_id in self.reported_dead_agents:
+                continue
 
-        # 7. Xac dinh dieu kien ket thuc (Terminated & Truncated)
-        is_time_up = self.timestep >= self.max_steps
-        terminateds: Dict[str, bool] = {"__all__": is_time_up}
-        truncateds: Dict[str, bool] = {"__all__": False}
+            is_dead_now = agent.status in [LifeCycleStatus.TERMINATED, LifeCycleStatus.BANKRUPT, LifeCycleStatus.DECEASED]
 
-        for agent_id, agent in self.agents.items():
-            # Tac tu chet hoac pha san thi terminated rieng le
-            is_agent_dead = agent.status in [LifeCycleStatus.TERMINATED, LifeCycleStatus.BANKRUPT, LifeCycleStatus.DECEASED]
-            terminateds[agent_id] = is_agent_dead or is_time_up
-            truncateds[agent_id] = False
+            if is_dead_now:
+                # Bao cao lan cuoi cung va ghi danh vao danh sach dead
+                self.reported_dead_agents.add(agent_id)
+                observations[agent_id] = agent.observe(raw_state).vector
+                rewards[agent_id] = rewards_all[agent_id]
+                terminateds[agent_id] = True
+                truncateds[agent_id] = False
+                infos[agent_id] = {"status": agent.status.name, "events": transition_results[agent_id].events_triggered}
+            else:
+                # Tac tu dang song binh thuong
+                observations[agent_id] = agent.observe(raw_state).vector
+                rewards[agent_id] = rewards_all[agent_id]
+                terminateds[agent_id] = False
+                truncateds[agent_id] = is_time_up
+                infos[agent_id] = {"status": agent.status.name, "events": transition_results[agent_id].events_triggered}
+
+        # Dieu kien dung toan bo the gioi
+        terminateds["__all__"] = False
+        truncateds["__all__"] = is_time_up
 
         return observations, rewards, terminateds, truncateds, infos
 

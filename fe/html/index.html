@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Institutional AI Economist | Research Simulation Dashboard</title>
     <link rel="stylesheet" href="/css/dashboard.css">
-    <!-- Cac thu vien truc quan hoa tieu chuan -->
+    <!-- Nap D3.js truoc ForceGraph -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/force-graph"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="app-container">
-        <!-- HEADER & DIEU KHIEN CHINH -->
         <header class="top-nav">
             <div class="brand">
                 <span class="system-title">INSTITUTIONAL AI ECONOMIST</span>
@@ -44,9 +44,7 @@
             </div>
         </header>
 
-        <!-- KHU VUC HIEN THI TRANG THAI CHINH -->
         <main class="main-content">
-            <!-- COT TRAI: DO THI TOPO THI TRUONG -->
             <section class="viewport-card graph-section">
                 <div class="card-header">
                     <h2>Market Network Topology</h2>
@@ -62,9 +60,7 @@
                 <div id="topology-graph" class="graph-viewport"></div>
             </section>
 
-            <!-- COT PHAI: CAC BANG DIEU KHIEN VI MO VA DONG THOI GIAN -->
             <aside class="sidebar-panels">
-                <!-- PANEL CHI SO VI MO -->
                 <div class="viewport-card metrics-card">
                     <div class="card-header">
                         <h2>Macroeconomic Telemetry</h2>
@@ -98,7 +94,6 @@
                     </div>
                 </div>
 
-                <!-- PANEL DO THI CHUOI THOI GIAN -->
                 <div class="viewport-card chart-card">
                     <div class="card-header">
                         <h2>Macro Historical Series</h2>
@@ -108,20 +103,16 @@
                     </div>
                 </div>
 
-                <!-- PANEL SO CAI SU KIEN THUC TE -->
                 <div class="viewport-card logs-card">
                     <div class="card-header">
                         <h2>Institutional Ledger Stream</h2>
                         <span class="log-counter" id="log-count">0 events</span>
                     </div>
-                    <div class="log-stream" id="log-stream-container">
-                        <!-- Du lieu su kien append truc tiep tai day -->
-                    </div>
+                    <div class="log-stream" id="log-stream-container"></div>
                 </div>
             </aside>
         </main>
 
-        <!-- FOOTER: CHI TIET TAC TU DUOC CHON -->
         <footer class="inspector-footer">
             <div class="inspector-title">Agent Telemetry Inspector:</div>
             <div id="inspector-content" class="inspector-details">

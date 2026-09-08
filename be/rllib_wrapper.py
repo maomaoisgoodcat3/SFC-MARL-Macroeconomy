@@ -117,7 +117,6 @@ class RLlibMacroEnv(MultiAgentEnv):
 
         obs, rewards, terminateds, truncateds, infos = self.env.step(sanitized_actions)
 
-        # Loc so hoc toan dien cho dau ra truoc khi tra ve PyTorch
         clean_obs: Dict[str, np.ndarray] = {}
         for agent_id, obs_vec in obs.items():
             clean_obs[agent_id] = np.nan_to_num(obs_vec, nan=0.0, posinf=1000.0, neginf=-1000.0).astype(np.float32)
@@ -125,13 +124,10 @@ class RLlibMacroEnv(MultiAgentEnv):
         clean_rewards: Dict[str, float] = {}
         for agent_id, r in rewards.items():
             val = float(r)
-            if np.isnan(val) or np.isinf(val):
-                clean_rewards[agent_id] = 0.0
-            else:
-                clean_rewards[agent_id] = float(np.clip(val, -100.0, 100.0))
+            clean_rewards[agent_id] = 0.0 if (np.isnan(val) or np.isinf(val)) else float(np.clip(val, -100.0, 100.0))
 
-        # Cap nhat danh sach tac tu dang hoat dong
-        self.agents = [aid for aid, term in terminateds.items() if aid != "__all__" and not term]
+        # Cap nhat self.agents chi chua cac tac tu hien con song (chua bi bao cao dead)
+        self.agents = [aid for aid in self.possible_agents if aid not in self.env.reported_dead_agents]
 
         return clean_obs, clean_rewards, terminateds, truncateds, infos
 
