@@ -121,25 +121,19 @@ class InstitutionalLogger:
     def flush_ui_events(self, output_path: str = "be/exports/ui_events.json") -> None:
         """
         Ghi file JSON phuc vu Frontend.
-        Su dung phuong thuc Atomic Replacement de tranh loi xung dot truy cap file tren he dieu hanh Windows.
+        Ghi de truc tiep de tranh loi khoa file WinError 5 cua os.replace tren Windows.
         """
         if not self.ui_event_queue:
             return
 
-        temp_path = f"{output_path}.tmp"
         try:
-            with open(temp_path, "w", encoding="utf-8") as f:
+            with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(self.ui_event_queue, f, indent=2)
-            
-            # Thay the nguyen tu (Atomic Replace)
-            os.replace(temp_path, output_path)
+        except PermissionError:
+            # Bo qua nhip ghi neu file dang bi tien trinh khac tren Windows khoa tam thoi
+            pass
         except Exception as exc:
-            logger.warning(f"[WARNING] Could not safely flush UI events to {output_path}: {str(exc)}")
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass
+            logger.warning(f"[WARNING] Could not flush UI events to {output_path}: {str(exc)}")
         finally:
             self.ui_event_queue.clear()
 

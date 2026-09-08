@@ -45,25 +45,40 @@ def parse_args():
     return parser.parse_args()
 
 def find_latest_checkpoint(checkpoint_base: str) -> str:
+    """
+    Quet chinh xac thu muc checkpoint co chi so iteration cao nhat,
+    tuong thich voi ca checkpoint dinh ky va checkpoint khan cap (_interrupt).
+    """
     training_cp_dir = os.path.join(checkpoint_base, "training")
     if not os.path.exists(training_cp_dir):
         return ""
-    
-    subdirs = [d for d in os.listdir(training_cp_dir) if d.startswith("iter_")]
+
+    subdirs = [
+        d for d in os.listdir(training_cp_dir) 
+        if os.path.isdir(os.path.join(training_cp_dir, d)) and d.startswith("iter_")
+    ]
     if not subdirs:
         return ""
-    
-    iter_nums = []
-    for d in subdirs:
-        parts = d.split("_")
-        if len(parts) >= 2 and parts[1].isdigit():
-            iter_nums.append(int(parts[1]))
 
-    if not iter_nums:
+    def parse_checkpoint_entry(dir_name: str):
+        parts = dir_name.split("_")
+        if len(parts) >= 2 and parts[1].isdigit():
+            iter_num = int(parts[1])
+            mtime = os.path.getmtime(os.path.join(training_cp_dir, dir_name))
+            return (iter_num, mtime, dir_name)
+        return (-1, 0, dir_name)
+
+    valid_entries = [parse_checkpoint_entry(d) for d in subdirs]
+    valid_entries = [entry for entry in valid_entries if entry[0] >= 0]
+
+    if not valid_entries:
         return ""
 
-    latest_iter = max(iter_nums)
-    return os.path.join(training_cp_dir, f"iter_{latest_iter}")
+    # Sap xep uu tien theo: 1. So iteration cao nhat -> 2. Thoi gian ghi moi nhat
+    valid_entries.sort(key=lambda x: (x[0], x[1]))
+    target_dir_name = valid_entries[-1][2]
+    
+    return os.path.join(training_cp_dir, target_dir_name)
 
 def run_training(args):
     logger.info("[SYSTEM] Initializing Institutional AI Economist Training Engine...")
@@ -119,6 +134,7 @@ def run_training(args):
     logger.info("[SYSTEM] Compiling PyTorch Neural Architectures...")
     algo = config.build_algo() if hasattr(config, "build_algo") else config.build()
 
+    # Phuc hoi Checkpoint (Restore)
     target_checkpoint = args.restore_checkpoint
     if not target_checkpoint:
         target_checkpoint = find_latest_checkpoint(args.checkpoint_dir)
@@ -126,8 +142,11 @@ def run_training(args):
     if target_checkpoint and os.path.exists(target_checkpoint):
         logger.info(f"[SYSTEM] Restoring policy weights from: {target_checkpoint}")
         algo.restore(target_checkpoint)
+        current_iter = algo.iteration
+        logger.info(f"[SYSTEM] Checkpoint successfully loaded. Resuming training from iteration {current_iter}.")
     else:
         logger.info("[SYSTEM] No existing checkpoint identified. Training starting from iteration 0.")
+        current_iter = 0
 
     training_cp_dir = os.path.join(args.checkpoint_dir, "training")
     os.makedirs(training_cp_dir, exist_ok=True)

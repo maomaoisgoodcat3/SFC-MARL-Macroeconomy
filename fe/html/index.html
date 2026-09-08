@@ -3,16 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Institutional AI Economist | Research Simulation Dashboard</title>
-    <link rel="stylesheet" href="/css/dashboard.css">
-    <!-- Nap D3.js truoc ForceGraph -->
+    <title>Institutional AI Economist | Research Dashboard</title>
+    <link rel="stylesheet" href="/css/dashboard.css?v=2.1">
+    
+    <!-- Thu vien hien thi: D3, ForceGraph, ChartJS, Hammer & Zoom Plugin -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/force-graph"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
 <body>
     <div class="app-container">
-        <!-- HEADER & DIEU KHIEN CHINH -->
+        <!-- TOP NAVIGATION & CONTROLS -->
         <header class="top-nav">
             <div class="brand">
                 <span class="system-title">INSTITUTIONAL AI ECONOMIST</span>
@@ -34,7 +37,7 @@
                 <div class="control-group">
                     <label for="checkpoint-select">Checkpoint</label>
                     <select id="checkpoint-select">
-                        <option value="">Live Model (Initial)</option>
+                        <option value="heuristic">Live Model (Heuristic)</option>
                     </select>
                 </div>
             </div>
@@ -45,25 +48,25 @@
             </div>
         </header>
 
-        <!-- KHU VUC HIEN THI CHINH -->
+        <!-- MAIN LAYOUT -->
         <main class="main-content">
-            <!-- COT TRAI: DO THI TOPO THI TRUONG -->
+            <!-- COT TRAI: SPATIAL NETWORK TOPOLOGY -->
             <section class="viewport-card graph-section">
                 <div class="card-header">
-                    <h2>Market Network Topology</h2>
+                    <h2>Market Network Topology (Spatial Fixed Matrix)</h2>
                     <div class="legend-inline">
                         <span class="legend-tag lg-gov">Gov</span>
                         <span class="legend-tag lg-bank">Bank</span>
                         <span class="legend-tag lg-eco">Economy</span>
                         <span class="legend-tag lg-sup">Supervisor</span>
-                        <span class="legend-tag lg-firm">Firm</span>
-                        <span class="legend-tag lg-emp">Employee</span>
+                        <span class="legend-tag lg-firm">Firm (F0-F4)</span>
+                        <span class="legend-tag lg-emp">Employee (E0-E49)</span>
                     </div>
                 </div>
                 <div id="topology-graph" class="graph-viewport"></div>
             </section>
 
-            <!-- COT PHAI: TELEMETRY, CHARTS, LOGS -->
+            <!-- COT PHAI: METRICS, CHARTS, LOGS -->
             <aside class="sidebar-panels">
                 <div class="viewport-card metrics-card">
                     <div class="card-header">
@@ -100,7 +103,12 @@
 
                 <div class="viewport-card chart-card">
                     <div class="card-header">
-                        <h2>Macro Historical Series</h2>
+                        <h2>Macro Historical Series (Full Timeline)</h2>
+                        <div class="chart-quick-controls">
+                            <button id="btn-chart-all" class="btn btn-secondary btn-xs">All</button>
+                            <button id="btn-chart-last100" class="btn btn-secondary btn-xs">Last 100M</button>
+                            <button id="btn-chart-reset-zoom" class="btn btn-secondary btn-xs">Reset</button>
+                        </div>
                     </div>
                     <div class="chart-wrapper">
                         <canvas id="macroSeriesChart"></canvas>
@@ -117,15 +125,15 @@
             </aside>
         </main>
 
-        <!-- FOOTER: CHI TIET TAC TU -->
+        <!-- FOOTER: AGENT TELEMETRY -->
         <footer class="inspector-footer">
             <div class="inspector-title">Agent Telemetry Inspector:</div>
             <div id="inspector-content" class="inspector-details">
-                <span class="text-muted">Click any agent node on the topology graph to inspect its microeconomic state.</span>
+                <span class="text-muted">Click any agent node on the matrix above to inspect its microeconomic state.</span>
             </div>
         </footer>
     </div>
 
-    <script src="/js/dashboard.js"></script>
+    <script src="/js/dashboard.js?v=2.1"></script>
 </body>
 </html>

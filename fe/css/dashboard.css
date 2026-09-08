@@ -30,7 +30,7 @@
 body {
     background-color: var(--bg-surface);
     color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-size: 13px;
     height: 100vh;
     overflow: hidden;
@@ -42,7 +42,6 @@ body {
     height: 100vh;
 }
 
-/* TOP NAVBAR */
 .top-nav {
     display: flex;
     justify-content: space-between;
@@ -51,6 +50,7 @@ body {
     background-color: var(--bg-card);
     border-bottom: 1px solid var(--bg-card-border);
     height: 48px;
+    flex-shrink: 0;
 }
 
 .brand {
@@ -87,8 +87,12 @@ body {
     cursor: pointer;
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.5px;
     transition: background-color 0.15s ease;
+}
+
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 10px;
 }
 
 .btn-primary { background: var(--color-primary); color: #fff; }
@@ -117,9 +121,10 @@ body {
     background: var(--bg-surface);
     color: var(--text-primary);
     border: 1px solid var(--bg-card-border);
-    padding: 3px 6px;
+    padding: 3px 8px;
     border-radius: 4px;
     font-size: 11px;
+    max-width: 200px;
 }
 
 .status-indicator {
@@ -145,10 +150,11 @@ body {
 /* MAIN LAYOUT */
 .main-content {
     display: grid;
-    grid-template-columns: 1fr 380px;
+    grid-template-columns: 1fr 420px;
     gap: 8px;
     padding: 8px;
     flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -165,13 +171,14 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 12px;
     background-color: rgba(255, 255, 255, 0.02);
     border-bottom: 1px solid var(--bg-card-border);
+    flex-shrink: 0;
 }
 
 .card-header h2 {
-    font-size: 12px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-secondary);
@@ -183,10 +190,7 @@ body {
     font-size: 10px;
 }
 
-.legend-tag::before {
-    content: "■ ";
-}
-
+.legend-tag::before { content: "■ "; }
 .lg-gov::before { color: var(--agent-gov); }
 .lg-bank::before { color: var(--agent-bank); }
 .lg-eco::before { color: var(--agent-eco); }
@@ -197,19 +201,22 @@ body {
 .graph-viewport {
     flex: 1;
     position: relative;
+    background-color: #07090e;
 }
 
-/* SIDEBAR */
+/* SIDEBAR PANELS */
 .sidebar-panels {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-height: 0;
     overflow: hidden;
 }
 
-.metrics-card { height: 160px; }
-.chart-card { height: 210px; }
-.logs-card { flex: 1; min-height: 180px; }
+.metrics-card {
+    flex-shrink: 0;
+    min-height: 175px;
+}
 
 .metrics-grid {
     display: grid;
@@ -248,13 +255,24 @@ body {
     font-size: 11px;
 }
 
+.chart-card {
+    height: 220px;
+    flex-shrink: 0;
+}
+
 .chart-wrapper {
     flex: 1;
     padding: 6px;
     position: relative;
+    min-height: 0;
 }
 
-/* LOGS */
+.logs-card {
+    flex: 1;
+    min-height: 180px;
+    overflow: hidden;
+}
+
 .log-stream {
     flex: 1;
     overflow-y: auto;
@@ -271,13 +289,14 @@ body {
     padding: 4px 6px;
     border-radius: 3px;
     border-left: 3px solid var(--bg-card-border);
+    word-break: break-all;
 }
 
 .log-entry.HIRE { border-left-color: var(--agent-firm); }
 .log-entry.WAGE_PAID { border-left-color: var(--agent-emp); }
 .log-entry.LOAN_DISBURSED { border-left-color: var(--agent-bank); }
 .log-entry.PENALTY_ENFORCED { border-left-color: var(--agent-sup); }
-.log-entry.TAX_COLLECTED { border-left-color: var(--agent-gov); }
+.log-entry.AGENT_BANKRUPT { border-left-color: var(--color-danger); }
 
 /* INSPECTOR FOOTER */
 .inspector-footer {
@@ -289,6 +308,7 @@ body {
     padding: 0 16px;
     gap: 12px;
     font-size: 11px;
+    flex-shrink: 0;
 }
 
 .inspector-title {
