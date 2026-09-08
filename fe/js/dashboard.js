@@ -23,7 +23,7 @@ const isServedByFastAPI = window.location.port === '8000';
 const BACKEND_HTTP = isServedByFastAPI ? '' : 'http://127.0.0.1:8000';
 const BACKEND_WS_HOST = isServedByFastAPI ? window.location.host : '127.0.0.1:8000';
 
-// 1. KHOI TAO CHARTS (AN TOAN VOI NULL CHECK)
+// 1. KHOI TAO CHARTS (CHART.JS)
 let macroChart = null;
 const chartCanvas = document.getElementById('macroSeriesChart');
 if (chartCanvas && typeof Chart !== 'undefined') {
@@ -71,31 +71,71 @@ if (chartCanvas && typeof Chart !== 'undefined') {
     });
 }
 
-// 2. KHOI TAO NETWORK FORCE GRAPH
+// 2. BO CUC CO DINH THOANG MAT (DETERMINISTIC FIXED LAYOUT)
+function assignFixedCoordinates(agentId, type) {
+    // 4 The che vi mo o trung tam hang tren cung
+    if (type === 'government') return { fx: -120, fy: -160 };
+    if (type === 'bank')       return { fx: -40,  fy: -160 };
+    if (type === 'economy')    return { fx: 40,   fy: -160 };
+    if (type === 'supervisor') return { fx: 120,  fy: -160 };
+
+    // 5 Doanh nghiep dan hang ngang o giua
+    if (type === 'firm') {
+        const idx = parseInt(agentId.split('_')[1], 10) || 0;
+        return { fx: (idx - 2) * 80, fy: -60 };
+    }
+
+    // 50 Nguoi lao dong chia thanh luoi 5 hang x 10 cot ben duoi
+    if (type === 'employee') {
+        const idx = parseInt(agentId.split('_')[1], 10) || 0;
+        const col = idx % 10;
+        const row = Math.floor(idx / 10);
+        return {
+            fx: (col - 4.5) * 42,
+            fy: 20 + row * 45
+        };
+    }
+
+    return { fx: 0, fy: 0 };
+}
+
+// 3. KHOI TAO NETWORK GRAPH VOI NHAN TEXT & TOA DO KHOA
 let graph = null;
 const graphContainer = document.getElementById('topology-graph');
 if (graphContainer && typeof ForceGraph !== 'undefined') {
     graph = ForceGraph()(graphContainer)
         .nodeId('id')
-        .nodeLabel(node => `${node.id} (${node.type.toUpperCase()})\nCash: $${Math.round(node.cash || 0)}`)
-        .nodeColor(node => AGENT_COLORS[node.type] || '#888')
-        .nodeRelSize(node => ['government', 'bank', 'economy', 'supervisor'].includes(node.type) ? 8 : 4)
+        .nodeRelSize(5)
         .linkColor(link => {
-            if (link.type === 'HIRE' || link.type === 'WAGE_PAID') return 'rgba(88, 166, 255, 0.4)';
-            if (link.type === 'LOAN_DISBURSED') return 'rgba(210, 153, 34, 0.6)';
-            if (link.type === 'PENALTY_ENFORCED') return 'rgba(163, 113, 247, 0.6)';
-            return 'rgba(255, 255, 255, 0.15)';
+            if (link.type === 'HIRE' || link.type === 'WAGE_PAID') return 'rgba(88, 166, 255, 0.7)';
+            if (link.type === 'LOAN_DISBURSED') return 'rgba(210, 153, 34, 0.8)';
+            if (link.type === 'PENALTY_ENFORCED') return 'rgba(163, 113, 247, 0.9)';
+            return 'rgba(255, 255, 255, 0.3)';
         })
-        .linkWidth(link => ['LOAN_DISBURSED', 'PENALTY_ENFORCED'].includes(link.type) ? 2 : 1)
-        .linkDirectionalParticles(link => link.type === 'WAGE_PAID' ? 2 : 0)
-        .linkDirectionalParticleSpeed(0.01)
-        .onNodeClick(node => inspectAgent(node.id));
+        .linkWidth(link => ['LOAN_DISBURSED', 'PENALTY_ENFORCED'].includes(link.type) ? 2.5 : 1.5)
+        .linkDirectionalParticles(2)
+        .linkDirectionalParticleSpeed(0.03)
+        .onNodeClick(node => inspectAgent(node.id))
+        .nodeCanvasObject((node, ctx, globalScale) => {
+            const label = node.shortName;
+            const fontSize = 10 / globalScale;
+            ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
 
-    // Kiem tra an toan truoc khi kich hoat cac luc keo cua D3
-    if (typeof d3 !== 'undefined') {
-        graph.d3Force('charge', d3.forceManyBody().strength(-40))
-             .d3Force('radial', d3.forceRadial(180, 0, 0).strength(0.05));
-    }
+            // Ve hat Node
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, node.radius, 0, 2 * Math.PI, false);
+            ctx.fillStyle = AGENT_COLORS[node.type] || '#888';
+            ctx.fill();
+            ctx.lineWidth = 1.5 / globalScale;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            // Ve Nhan (ID) ngay duoi hat
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#e6edf3';
+            ctx.fillText(label, node.x, node.y + node.radius + 2);
+        });
 
     function resizeGraph() {
         if (graph && graphContainer) {
@@ -104,14 +144,14 @@ if (graphContainer && typeof ForceGraph !== 'undefined') {
         }
     }
     window.addEventListener('resize', resizeGraph);
-    setTimeout(resizeGraph, 100);
+    setTimeout(resizeGraph, 150);
 }
 
-// 3. CAP NHAT GIAO DIEN
+// 4. CAP NHAT GIAO DIEN & CANH KET NOI TAM THOI
 function updateDashboardUI(payload) {
     const monthEl = document.getElementById('metric-month');
     if (monthEl) monthEl.innerText = payload.timestep;
-    
+
     const m = payload.macro;
     if (m) {
         const setVal = (id, text) => {
@@ -144,28 +184,53 @@ function updateDashboardUI(payload) {
         }
     }
 
+    // Xu ly Nodes kem toa do khoa co dinh
     state.agents = payload.agents || {};
-    const nodes = Object.values(state.agents).map(a => ({
-        id: a.agent_id,
-        type: a.type,
-        cash: a.cash || a.treasury || a.reserves || 0,
-        status: a.status
-    }));
+    const nodes = Object.values(state.agents).map(a => {
+        const coords = assignFixedCoordinates(a.agent_id, a.type);
+        let shortName = a.agent_id.toUpperCase();
+        let radius = 5;
 
+        if (a.type === 'employee') {
+            shortName = `E${a.agent_id.split('_')[1]}`;
+            radius = 4;
+        } else if (a.type === 'firm') {
+            shortName = `F${a.agent_id.split('_')[1]}`;
+            radius = 7;
+        } else {
+            radius = 9;
+        }
+
+        return {
+            id: a.agent_id,
+            type: a.type,
+            shortName: shortName,
+            radius: radius,
+            cash: a.cash || a.treasury || a.reserves || 0,
+            status: a.status,
+            fx: coords.fx,
+            fy: coords.fy
+        };
+    });
+
+    // Xu ly Canh tuong tac: Chi song trong 1 chu ky roi tu huy
     if (payload.events && payload.events.length > 0) {
         payload.events.forEach(e => {
             appendLog(e);
             if (e.source && e.target && e.source !== 'MARKET' && e.target !== 'MARKET') {
-                const existing = state.links.find(l => l.source.id === e.source && l.target.id === e.target && l.type === e.type);
-                if (!existing) {
-                    state.links.push({ source: e.source, target: e.target, type: e.type, expire: 5 });
-                }
+                state.links.push({
+                    source: e.source,
+                    target: e.target,
+                    type: e.type,
+                    ttl: 1 // Tu dong bien mat ngay sau 1 chu ky de chong roi mat
+                });
             }
         });
     }
 
-    state.links.forEach(l => l.expire--);
-    state.links = state.links.filter(l => l.expire > 0);
+    // Giam thoi gian ton tai va loc bo cac lien ket het han
+    state.links.forEach(l => l.ttl--);
+    state.links = state.links.filter(l => l.ttl >= 0);
 
     if (graph) {
         graph.graphData({ nodes, links: state.links });
@@ -184,7 +249,7 @@ function appendLog(e) {
     entry.className = `log-entry ${e.type}`;
     entry.innerText = `[M${e.timestep}] ${e.type}: ${e.source} -> ${e.target} | ${JSON.stringify(e.payload)}`;
     stream.prepend(entry);
-    
+
     if (stream.children.length > 80) {
         stream.removeChild(stream.lastChild);
     }
@@ -218,14 +283,15 @@ function inspectAgent(agentId) {
     container.innerHTML = detailHtml;
 }
 
-// 4. DIEU KHIEN REST API
+// 5. DIEU KHIEN REST API & GAN SU KIEN NUT BAM
 async function sendControl(action, value = null) {
     try {
-        await fetch(`${BACKEND_HTTP}/api/control`, {
+        const res = await fetch(`${BACKEND_HTTP}/api/control`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action, value })
         });
+        return await res.json();
     } catch (err) {
         console.error('[FE] Failed to dispatch control:', err);
     }
@@ -258,12 +324,56 @@ if (speedSlider) {
     });
 }
 
-// 5. KET NOI WEBSOCKET
+// 6. NAP DANH SACH CHECKPOINTS TU BACKEND
+async function initCheckpointsDropdown() {
+    const select = document.getElementById('checkpoint-select');
+    if (!select) return;
+
+    try {
+        const res = await fetch(`${BACKEND_HTTP}/api/checkpoints`);
+        const data = await res.json();
+
+        select.innerHTML = '';
+
+        const heuristicOpt = document.createElement('option');
+        heuristicOpt.value = 'heuristic';
+        heuristicOpt.innerText = 'Live Model (Heuristic)';
+        select.appendChild(heuristicOpt);
+
+        if (data.checkpoints && data.checkpoints.length > 0) {
+            data.checkpoints.forEach(cp => {
+                const opt = document.createElement('option');
+                opt.value = cp;
+                opt.innerText = `Policy: ${cp}`;
+                select.appendChild(opt);
+            });
+        }
+
+        if (data.active) {
+            select.value = data.active;
+        }
+
+        select.addEventListener('change', async (e) => {
+            console.log(`[FE] Switching policy checkpoint to: ${e.target.value}`);
+            await sendControl('LOAD_CHECKPOINT', e.target.value);
+            state.history.months = [];
+            state.history.gdp = [];
+            state.history.gini = [];
+            const stream = document.getElementById('log-stream-container');
+            if (stream) stream.innerHTML = '';
+            await sendControl('RESET');
+        });
+    } catch (err) {
+        console.warn('[FE] Failed to load checkpoints list:', err);
+    }
+}
+
+// 7. KET NOI WEBSOCKET
 let ws = null;
 function initWebSocket() {
     const wsUrl = `ws://${BACKEND_WS_HOST}/ws/stream`;
     console.log(`[FE] Connecting to WebSocket: ${wsUrl}`);
-    
+
     const dot = document.getElementById('connection-dot');
     const label = document.getElementById('connection-status');
 
@@ -299,4 +409,6 @@ function initWebSocket() {
     }
 }
 
+// Khoi dong toan bo cac tien trinh giao dien
+initCheckpointsDropdown();
 initWebSocket();
