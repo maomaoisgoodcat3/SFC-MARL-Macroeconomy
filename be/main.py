@@ -35,7 +35,9 @@ def parse_args():
     parser.add_argument("--num-firms", type=int, default=5, help="Total firm population")
     parser.add_argument("--max-steps", type=int, default=240, help="Maximum timesteps (months) per episode")
     parser.add_argument("--train-iters", type=int, default=500, help="Number of training iterations")
-    parser.add_argument("--train-batch-size", type=int, default=2000, help="Training batch size")
+    parser.add_argument("--train-batch-size", type=int, default=4000, help="Training batch size")
+    parser.add_argument("--num-workers", type=int, default=8, help="Number of parallel rollout workers")
+    parser.add_argument("--minibatch-size", type=int, default=256, help="PPO SGD minibatch size")
     parser.add_argument("--checkpoint-freq", type=int, default=20, help="Save frequency (iterations)")
     parser.add_argument("--checkpoint-dir", type=str, default="be/checkpoint", help="Directory for checkpoints")
     parser.add_argument("--restore-checkpoint", type=str, default=None, help="Explicit checkpoint path to restore")
@@ -96,15 +98,20 @@ def run_training(args):
         )
         .training(
             train_batch_size=args.train_batch_size,
+            sgd_minibatch_size=args.minibatch_size,      # Chia nhỏ để tính gradient nhanh trên CPU
+            num_sgd_iter=10,
             model={"fcnet_hiddens": [64, 64]},
             vf_clip_param=500.0,
             grad_clip=0.5,
             lr=3e-4
         )
         .callbacks(InstitutionalMetricsCallback)
+        .resources(
+            num_gpus=0                   # Chạy thuần CPU
+        )
         .env_runners(
-            num_env_runners=1,
-            rollout_fragment_length="auto"
+            num_env_runners=8,
+            rollout_fragment_length=100
         )
         .debugging(seed=args.seed)
     )
