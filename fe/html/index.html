@@ -3,10 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Institutional AI Economist | Research Dashboard</title>
-    <link rel="stylesheet" href="/css/dashboard.css?v=2.1">
-    
-    <!-- Thu vien hien thi: D3, ForceGraph, ChartJS, Hammer & Zoom Plugin -->
+    <title>Institutional AI Economist | Research Sandbox</title>
+    <link rel="stylesheet" href="/css/dashboard.css?v=3.5">
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/force-graph"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -15,11 +13,11 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- TOP NAVIGATION & CONTROLS -->
+        <!-- TOP CONTROL BAR -->
         <header class="top-nav">
             <div class="brand">
                 <span class="system-title">INSTITUTIONAL AI ECONOMIST</span>
-                <span class="version-tag">RESEARCH ENGINE v1.0</span>
+                <span class="version-tag">SANDBOX v1.5</span>
             </div>
             
             <div class="simulation-controls">
@@ -35,7 +33,7 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="checkpoint-select">Checkpoint</label>
+                    <label for="checkpoint-select">Policy</label>
                     <select id="checkpoint-select">
                         <option value="heuristic">Live Model (Heuristic)</option>
                     </select>
@@ -48,10 +46,10 @@
             </div>
         </header>
 
-        <!-- MAIN LAYOUT -->
+        <!-- MAIN VIEWPORT -->
         <main class="main-content">
-            <!-- COT TRAI: SPATIAL NETWORK TOPOLOGY -->
-            <section class="viewport-card graph-section">
+            <!-- COT TRAI: GRAPH TOPOLOGY -->
+            <section class="graph-section">
                 <div class="card-header">
                     <h2>Market Network Topology (Spatial Fixed Matrix)</h2>
                     <div class="legend-inline">
@@ -59,52 +57,77 @@
                         <span class="legend-tag lg-bank">Bank</span>
                         <span class="legend-tag lg-eco">Economy</span>
                         <span class="legend-tag lg-sup">Supervisor</span>
-                        <span class="legend-tag lg-firm">Firm (F0-F4)</span>
-                        <span class="legend-tag lg-emp">Employee (E0-E49)</span>
+                        <span class="legend-tag lg-firm">Firms</span>
+                        <span class="legend-tag lg-emp">Employees</span>
                     </div>
                 </div>
                 <div id="topology-graph" class="graph-viewport"></div>
             </section>
 
-            <!-- COT PHAI: METRICS, CHARTS, LOGS -->
+            <!-- COT PHAI: SCROLLABLE CONTROL SIDEBAR -->
             <aside class="sidebar-panels">
+                <!-- 1. TELEMETRY -->
                 <div class="viewport-card metrics-card">
                     <div class="card-header">
                         <h2>Macroeconomic Telemetry</h2>
-                        <span class="metric-badge">Month <b id="metric-month">0</b></span>
+                        <span style="font-size:11px; font-weight:700; color:#58a6ff;">Month <b id="metric-month">0</b></span>
                     </div>
                     <div class="metrics-grid">
-                        <div class="metric-box">
-                            <span class="m-label">Gross Domestic Product</span>
-                            <span class="m-value" id="val-gdp">$0.00</span>
+                        <div class="metric-box"><span class="m-label">GDP</span><span class="m-value" id="val-gdp">$0</span></div>
+                        <div class="metric-box"><span class="m-label">Gini Index</span><span class="m-value" id="val-gini">0.000</span></div>
+                        <div class="metric-box"><span class="m-label">Inflation</span><span class="m-value" id="val-inflation">0.00%</span></div>
+                        <div class="metric-box"><span class="m-label">Living Cost</span><span class="m-value" id="val-cost">$0.0</span></div>
+                        <div class="metric-box"><span class="m-label">Active Pop</span><span class="m-value" id="val-pop">0 / 0</span></div>
+                        <div class="metric-box"><span class="m-label">M2 Money</span><span class="m-value" id="val-m2">$0</span></div>
+                        <div class="metric-box"><span class="m-label">Gov Treasury</span><span class="m-value" id="val-treasury">$0</span></div>
+                        <div class="metric-box"><span class="m-label">Bank Reserves</span><span class="m-value" id="val-bank">$0</span></div>
+                        <div class="metric-box"><span class="m-label">Bank NPL</span><span class="m-value" id="val-npl" style="color:#f85149;">$0</span></div>
+                    </div>
+                </div>
+
+                <!-- 2. POLICY INTERVENTION SANDBOX -->
+                <div class="viewport-card policy-card">
+                    <div class="card-header">
+                        <h2>Policy Intervention Console (Stress Sandbox)</h2>
+                        <button id="btn-apply-policy" class="btn btn-warning btn-xs">Apply Shock</button>
+                    </div>
+                    <div class="policy-controls-grid">
+                        <div class="policy-input-group">
+                            <div class="p-label-row">
+                                <span>Worker Tax Rate</span>
+                                <b id="lbl-worker-tax">15%</b>
+                            </div>
+                            <input type="range" id="slider-worker-tax" min="0" max="50" value="15" step="1">
                         </div>
-                        <div class="metric-box">
-                            <span class="m-label">Gini Coefficient</span>
-                            <span class="m-value" id="val-gini">0.000</span>
+                        <div class="policy-input-group">
+                            <div class="p-label-row">
+                                <span>Corporate Tax Rate</span>
+                                <b id="lbl-firm-tax">20%</b>
+                            </div>
+                            <input type="range" id="slider-firm-tax" min="0" max="50" value="20" step="1">
                         </div>
-                        <div class="metric-box">
-                            <span class="m-label">Market Inflation</span>
-                            <span class="m-value" id="val-inflation">0.00%</span>
+                        <div class="policy-input-group">
+                            <div class="p-label-row">
+                                <span>Bank Lending Rate</span>
+                                <b id="lbl-lending-rate">6.0%</b>
+                            </div>
+                            <input type="range" id="slider-lending-rate" min="1" max="25" value="6" step="0.5">
                         </div>
-                        <div class="metric-box">
-                            <span class="m-label">Living Cost Base</span>
-                            <span class="m-value" id="val-cost">$0.00</span>
-                        </div>
-                        <div class="metric-box">
-                            <span class="m-label">Active Population</span>
-                            <span class="m-value" id="val-pop">0 / 0</span>
-                        </div>
-                        <div class="metric-box">
-                            <span class="m-label">Bank Liquidity / NPL</span>
-                            <span class="m-value" id="val-bank">$0.00</span>
+                        <div class="policy-input-group">
+                            <div class="p-label-row">
+                                <span>Floor Living Cost</span>
+                                <b id="lbl-living-cost">$15.0</b>
+                            </div>
+                            <input type="range" id="slider-living-cost" min="10" max="100" value="15" step="1">
                         </div>
                     </div>
                 </div>
 
+                <!-- 3. HISTORICAL CHART -->
                 <div class="viewport-card chart-card">
                     <div class="card-header">
-                        <h2>Macro Historical Series (Full Timeline)</h2>
-                        <div class="chart-quick-controls">
+                        <h2>Historical Macro Trends</h2>
+                        <div style="display:flex; gap:4px;">
                             <button id="btn-chart-all" class="btn btn-secondary btn-xs">All</button>
                             <button id="btn-chart-last100" class="btn btn-secondary btn-xs">Last 100M</button>
                             <button id="btn-chart-reset-zoom" class="btn btn-secondary btn-xs">Reset</button>
@@ -115,25 +138,71 @@
                     </div>
                 </div>
 
+                <!-- 4. DUAL-STREAM LEDGER (2 TAB RIENG BIET) -->
                 <div class="viewport-card logs-card">
                     <div class="card-header">
-                        <h2>Institutional Ledger Stream</h2>
-                        <span class="log-counter" id="log-count">0 events</span>
+                        <div class="log-tab-buttons">
+                            <button id="tab-bulletin" class="tab-btn active">System Bulletins</button>
+                            <button id="tab-ledger" class="tab-btn">Transaction Feed</button>
+                        </div>
+                        <span id="log-count" style="font-size:10px; color:#8b949e;">0 events</span>
                     </div>
-                    <div class="log-stream" id="log-stream-container"></div>
+                    
+                    <!-- TAB 1: SU KIEN TRONG YEU (GIAN LAN, PHAT, DIED, BANKRUPT, SHOCK) -->
+                    <div class="log-stream active" id="bulletin-stream-container"></div>
+                    
+                    <!-- TAB 2: GIAO DICH THUONG NHAT (LUONG, MUA HANG, TRA NO) -->
+                    <div class="log-stream" id="ledger-stream-container" style="display:none;"></div>
                 </div>
             </aside>
         </main>
 
-        <!-- FOOTER: AGENT TELEMETRY -->
+        <!-- FOOTER: STRUCTURED TELEMETRY INSPECTOR (KHAI BAO SAN DOM CUNG) -->
         <footer class="inspector-footer">
-            <div class="inspector-title">Agent Telemetry Inspector:</div>
-            <div id="inspector-content" class="inspector-details">
-                <span class="text-muted">Click any agent node on the matrix above to inspect its microeconomic state.</span>
+            <div id="inspector-placeholder" class="inspector-placeholder">
+                Click any agent node on the matrix above to inspect its microeconomic state.
+            </div>
+
+            <div id="inspector-active-view" class="inspector-grid-layout" style="display:none;">
+                <!-- Card Header -->
+                <div class="agent-profile-card">
+                    <div class="agent-header-row">
+                        <span id="ins-id" class="agent-badge-id">AGENT_ID</span>
+                        <span id="ins-type" class="agent-badge-type">TYPE</span>
+                    </div>
+                    <span id="ins-status" class="agent-status-tag status-active">● ACTIVE</span>
+                </div>
+
+                <!-- Card Metrics Row -->
+                <div class="agent-metrics-row">
+                    <div class="ins-metric-col" id="col-cash">
+                        <span class="ins-m-title" id="lbl-metric-1">LIQUID CASH</span>
+                        <span id="ins-val-1" class="ins-m-val">$0.0</span>
+                    </div>
+                    <div class="ins-metric-col" id="col-energy">
+                        <span class="ins-m-title" id="lbl-metric-2">PHYSICAL ENERGY</span>
+                        <div id="ins-energy-wrap" class="energy-bar-wrap">
+                            <div id="ins-energy-bar" class="energy-bar-fill" style="width:100%; background:#3fb950;"></div>
+                        </div>
+                        <span id="ins-val-2" class="ins-m-val" style="display:none;"></span>
+                    </div>
+                    <div class="ins-metric-col" id="col-metric-3">
+                        <span class="ins-m-title" id="lbl-metric-3">AGE / MAX</span>
+                        <span id="ins-val-3" class="ins-m-val">-</span>
+                    </div>
+                    <div class="ins-metric-col" id="col-metric-4">
+                        <span class="ins-m-title" id="lbl-metric-4">EMPLOYER / WORKERS</span>
+                        <span id="ins-val-4" class="ins-m-val">-</span>
+                    </div>
+                    <div class="ins-metric-col" id="col-metric-5">
+                        <span class="ins-m-title" id="lbl-metric-5">WAGE / PROFIT</span>
+                        <span id="ins-val-5" class="ins-m-val">$0.0</span>
+                    </div>
+                </div>
             </div>
         </footer>
     </div>
 
-    <script src="/js/dashboard.js?v=2.1"></script>
+    <script src="/js/dashboard.js?v=3.5"></script>
 </body>
 </html>

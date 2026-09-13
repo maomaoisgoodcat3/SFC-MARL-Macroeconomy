@@ -64,7 +64,7 @@ class SimulationController:
         
         for event_type in self.env.event_bus._subscribers.keys():
             self.env.event_bus.subscribe(event_type, self.logger.log_event_for_ui)
-        
+        self.policy_overrides: Dict[str, float] = {}
         self.env.reset(seed=42)
         self._init_rllib_inference()
 
@@ -133,8 +133,33 @@ class SimulationController:
             logger.error(f"[SERVER] Failed to restore checkpoint {checkpoint_name}: {str(exc)}")
             return False
 
+    def apply_policy_shock(self, overrides: Dict[str, float]):
+        """Luu tru can thiep va ghi log su kien POLICY_SHOCK."""
+        for k in ["worker_tax", "firm_tax", "lending_rate", "living_cost"]:
+            if k in overrides:
+                self.policy_overrides[k] = float(overrides[k])
+
+        # Dong bo truc tiep vao the gioi vat ly
+        if "living_cost" in self.policy_overrides:
+            self.env.eco.base_living_cost = self.policy_overrides["living_cost"]
+
+        # Ghi vao hang doi log UI su kien cam quyen
+        shock_event = {
+            "type": "POLICY_SHOCK",
+            "source": "RULER_CONSOLE",
+            "target": "MACRO_SYSTEM",
+            "payload": {
+                "worker_tax": round(self.policy_overrides.get("worker_tax", self.env.gov.tax_rate_worker) * 100, 1),
+                "firm_tax": round(self.policy_overrides.get("firm_tax", self.env.gov.tax_rate_firm) * 100, 1),
+                "lending_rate": round(self.policy_overrides.get("lending_rate", self.env.bank.lending_rate) * 100, 2),
+                "living_cost": round(self.policy_overrides.get("living_cost", self.env.eco.base_living_cost), 1)
+            },
+            "timestep": self.current_step
+        }
+        self.logger.ui_event_queue.append(shock_event)
+        logger.info(f"[POLICY SHOCK ENFORCED] {self.policy_overrides}")
+    
     def get_actions(self) -> Dict[str, np.ndarray]:
-        """Quyet dinh hanh dong: Uu tien dung mang No-ron neu checkpoint da nap, fallback sang Heuristic."""
         actions = {}
         raw_state = self.env.get_raw_environment_state()
 
@@ -160,6 +185,22 @@ class SimulationController:
             else:
                 actions[agent_id] = agent.decide(agent_obs).values
 
+        # KHOA CUONG BUC: Ghi de len hanh dong cua AI bang gia tri nguoi dung thiet lap
+        if self.policy_overrides:
+            if "gov_1" in actions:
+                gov_act = np.array(actions["gov_1"], dtype=np.float32, copy=True)
+                if "worker_tax" in self.policy_overrides:
+                    gov_act[0] = self.policy_overrides["worker_tax"]
+                if "firm_tax" in self.policy_overrides:
+                    gov_act[1] = self.policy_overrides["firm_tax"]
+                actions["gov_1"] = gov_act
+
+            if "bank_1" in actions:
+                bank_act = np.array(actions["bank_1"], dtype=np.float32, copy=True)
+                if "lending_rate" in self.policy_overrides:
+                    bank_act[0] = self.policy_overrides["lending_rate"]
+                actions["bank_1"] = bank_act
+
         return actions
 
     async def broadcast(self, message: Dict[str, Any]):
@@ -176,37 +217,41 @@ class SimulationController:
 
     async def simulation_loop(self):
         while True:
-            if self.is_running:
-                self.current_step += 1
-                actions = self.get_actions()
+            try:
+                if self.is_running:
+                    self.current_step += 1
+                    actions = self.get_actions()
 
-                obs, rewards, terminateds, truncateds, infos = self.env.step(actions)
-                world_state = self.env.export_full_world_state()
+                    obs, rewards, terminateds, truncateds, infos = self.env.step(actions)
+                    world_state = self.env.export_full_world_state()
 
-                events = [
-                    {
-                        "type": e["type"],
-                        "source": e["source"],
-                        "target": e["target"],
-                        "payload": e["payload"],
-                        "timestep": e["timestep"]
+                    events = [
+                        {
+                            "type": e["type"],
+                            "source": e["source"],
+                            "target": e["target"],
+                            "payload": e["payload"],
+                            "timestep": e["timestep"]
+                        }
+                        for e in self.logger.ui_event_queue
+                    ]
+                    self.logger.flush_ui_events()
+
+                    payload = {
+                        "type": "SIMULATION_TICK",
+                        "timestep": self.current_step,
+                        "macro": world_state["macro"],
+                        "agents": world_state["agents"],
+                        "events": events
                     }
-                    for e in self.logger.ui_event_queue
-                ]
-                self.logger.flush_ui_events()
+                    await self.broadcast(payload)
 
-                payload = {
-                    "type": "SIMULATION_TICK",
-                    "timestep": self.current_step,
-                    "macro": world_state["macro"],
-                    "agents": world_state["agents"],
-                    "events": events
-                }
-                await self.broadcast(payload)
-
-                if terminateds.get("__all__", False) or self.current_step >= self.env.max_steps:
-                    self.is_running = False
-                    await self.broadcast({"type": "SIMULATION_ENDED", "timestep": self.current_step})
+                    if terminateds.get("__all__", False) or self.current_step >= self.env.max_steps:
+                        self.is_running = False
+                        await self.broadcast({"type": "SIMULATION_ENDED", "timestep": self.current_step})
+            except Exception as exc:
+                logger.error(f"[SERVER] Error in simulation tick {self.current_step}: {str(exc)}", exc_info=True)
+                self.is_running = False
 
             await asyncio.sleep(self.speed_delay)
 
@@ -233,19 +278,33 @@ async def handle_control(req: ControlRequest):
     elif req.action == "STEP":
         sim_controller.is_running = False
         actions = sim_controller.get_actions()
-        sim_controller.env.step(actions)
+        obs, rewards, terminateds, truncateds, infos = sim_controller.env.step(actions)
         sim_controller.current_step += 1
         state = sim_controller.env.export_full_world_state()
+
+        events = [
+            {
+                "type": e["type"],
+                "source": e["source"],
+                "target": e["target"],
+                "payload": e["payload"],
+                "timestep": e["timestep"]
+            }
+            for e in sim_controller.logger.ui_event_queue
+        ]
+        sim_controller.logger.flush_ui_events()
+
         await sim_controller.broadcast({
             "type": "SIMULATION_TICK",
             "timestep": sim_controller.current_step,
             "macro": state["macro"],
             "agents": state["agents"],
-            "events": []
+            "events": events
         })
     elif req.action == "RESET":
         sim_controller.is_running = False
         sim_controller.current_step = 0
+        sim_controller.policy_overrides.clear() # Xoa bo can thiep khi reset
         sim_controller.env.reset(seed=42)
         state = sim_controller.env.export_full_world_state()
         await sim_controller.broadcast({
@@ -260,6 +319,8 @@ async def handle_control(req: ControlRequest):
     elif req.action == "LOAD_CHECKPOINT":
         success = sim_controller.load_checkpoint(str(req.value))
         return {"status": "SUCCESS" if success else "FAILED", "active_checkpoint": sim_controller.active_checkpoint}
+    elif req.action == "SET_POLICY" and isinstance(req.value, dict):
+        sim_controller.apply_policy_shock(req.value)
 
     return {"status": "SUCCESS", "current_running": sim_controller.is_running}
 

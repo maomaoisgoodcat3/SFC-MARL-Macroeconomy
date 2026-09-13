@@ -6,28 +6,30 @@ from be.agents.base_agent import BaseAgent
 
 class Employee(BaseAgent):
     """
-    Tac tu Nguoi lao dong (Employee / Citizen).
-    Tuan thu nghiem ngat contract cua BaseAgent theo SAS v1.0.
+    Tac tu Nguoi lao dong (Employee / Citizen) v1.3.
+    - Tiep nhan dong bo status va skill_delta tu RuleEngine.
+    - Ham Reward phat that nghiep lien tuc de tao dong luc tim viec.
     """
     def __init__(self, agent_id: str):
         super().__init__(agent_id)
         self.agent_type = AgentType.EMPLOYEE
         
-        # Dac tinh noi tai (Noi suy tam ly va the ly)
+        # Dac tinh noi tai
         self.skill_level: float = 1.0
         self.risk_aversion: float = 0.5
         self.tax_morale: float = 0.8
         self.age: int = 20
-        self.max_age: int = 80
+        self.max_age: int = 75
         
-        # Chi so tai chinh va sinh hoc
+        # Chi so tai chinh va the ly
         self.cash: float = 0.0
         self.energy: float = 1.0
         self.employed_by: Optional[str] = None
         self.wage: float = 0.0
         self.debt: float = 0.0
+        self.unemployed_streak: int = 0
         
-        # Luu tru hanh dong gan nhat de tinh toan Reward
+        # Luu tru hanh dong gan nhat
         self.last_work_effort: float = 0.0
         self.last_declare_ratio: float = 1.0
         self.last_consumption: float = 0.0
@@ -36,7 +38,7 @@ class Employee(BaseAgent):
                    skill_level: float = 1.0, 
                    risk_aversion: float = 0.5, 
                    tax_morale: float = 0.8,
-                   initial_cash: float = 500.0,
+                   initial_cash: float = 300.0,
                    initial_energy: float = 1.0,
                    age: int = 20) -> None:
         self.skill_level = float(skill_level)
@@ -48,18 +50,15 @@ class Employee(BaseAgent):
         self.employed_by = None
         self.wage = 0.0
         self.debt = 0.0
+        self.unemployed_streak = 0
+        # Chuyen ngay sang ACTIVE khi da duoc nap thong so
         self.status = LifeCycleStatus.ACTIVE
 
     def observe(self, raw_environment_state: Dict[str, Any]) -> Observation:
-        """
-        Khong gian quan sat 12 chieu:
-        [0-4] Vi mo: Lam phat, Chi phi sinh hoat co so, Thue TNCN, Lai suat, Ty le that nghiep
-        [5-11] Vi mo noi tai: Tien mat, Nang luong, Ky nang, Luong hien tai, Trang thai viec lam, Tuoi, No
-        """
         macro = raw_environment_state.get("macro_indicators", {})
         inflation = float(macro.get("inflation", 0.0))
         living_cost = float(macro.get("base_living_cost", 15.0))
-        tax_rate = float(macro.get("worker_tax_rate", 0.1))
+        tax_rate = float(macro.get("worker_tax_rate", 0.15))
         interest_rate = float(macro.get("base_interest_rate", 0.05))
         unemployment_rate = float(macro.get("unemployment_rate", 0.0))
         
@@ -86,18 +85,11 @@ class Employee(BaseAgent):
         )
 
     def decide(self, observation: Observation) -> Action:
-        """
-        Xuat khong gian hanh dong 3 chieu:
-        [0]: Muc do no luc lam viec (Work Effort): [0.0, 1.0]
-        [1]: Ty le khai bao thu nhap nop thue (Declare Ratio): [0.0, 1.0]
-        [2]: Ty le tieu dung tren thu nhap kha dung (Consumption Ratio): [0.0, 1.0]
-        """
         if "injected_action" in observation.metadata:
             raw_action = observation.metadata["injected_action"]
         else:
-            # Heuristic mac dinh neu khong co Mang Neural truyen vao
-            effort = 0.8 if self.employed_by is not None else 0.3
-            raw_action = np.array([effort, 1.0, 0.5], dtype=np.float32)
+            effort = 0.8 if self.employed_by is not None else 0.4
+            raw_action = np.array([effort, 1.0, 0.6], dtype=np.float32)
 
         return Action(
             agent_id=self.agent_id,
@@ -114,10 +106,7 @@ class Employee(BaseAgent):
                 reason="Invalid action vector length"
             )
 
-        # Gioi han vat ly noi tai
         work_effort = float(np.clip(vals[0], 0.0, 1.0))
-        
-        # Neu the luc qua thap, khong the lao dong cuong do cao
         if self.energy < 0.2:
             work_effort = min(work_effort, self.energy)
 
@@ -133,6 +122,16 @@ class Employee(BaseAgent):
         self.energy = float(np.clip(self.energy + delta.get("energy_delta", 0.0), 0.0, 2.0))
         self.debt = float(max(0.0, self.debt + delta.get("debt_delta", 0.0)))
         
+        # 1. DONG BO TRANG THAI TU RULE ENGINE
+        if "status" in delta:
+            self.status = delta["status"]
+
+        # 2. CAP NHAT BIEN DONG KY NANG VA CHUOI THAT NGHIEP
+        if "skill_delta" in delta:
+            self.skill_level = float(np.clip(self.skill_level + delta["skill_delta"], 0.4, 4.0))
+        if "unemployed_streak" in delta:
+            self.unemployed_streak = int(delta["unemployed_streak"])
+
         if "employed_by" in delta:
             self.employed_by = delta["employed_by"]
         if "wage" in delta:
@@ -144,26 +143,27 @@ class Employee(BaseAgent):
         self.last_declare_ratio = float(delta.get("executed_declare_ratio", 1.0))
         self.last_consumption = float(delta.get("executed_consumption", 0.0))
 
-        # Kiem tra dieu kien sinh tu
+        # Kiem tra sinh tu noi tai
         if self.cash < -300.0 or self.energy <= 0.0 or self.age >= self.max_age:
             self.terminate(reason="Depleted resources or reached maximum age")
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
-        if self.status == LifeCycleStatus.TERMINATED:
+        if self.status in [LifeCycleStatus.TERMINATED, LifeCycleStatus.DECEASED]:
             return -100.0
 
-        # Ham thoa dung tieu dung CRRA
         consumption = max(0.01, self.last_consumption)
         u_consumption = (consumption ** (1.0 - self.risk_aversion) - 1.0) / (1.0 - self.risk_aversion)
 
-        # Chi phi mat thoa dung do lao dong nang nhoc
-        disutility_labor = (self.last_work_effort ** 3) / 3.0
+        # Chi phi mat thoa dung lao dong
+        disutility_labor = (self.last_work_effort ** 2.5) * 0.5
+        moral_cost = 1.5 * self.tax_morale * ((1.0 - self.last_declare_ratio) ** 2)
 
-        # Chi phi dao duc khi tron thue
-        moral_cost = 2.0 * self.tax_morale * ((1.0 - self.last_declare_ratio) ** 2)
+        # PHAT THAT NGHIEP (Khu benh y lai vao tro cap)
+        unemployment_penalty = 0.0
+        if self.employed_by is None:
+            unemployment_penalty = 2.0 + (1.5 * min(self.unemployed_streak, 10))
 
-        # Tong hop Utility
-        total_utility = u_consumption - disutility_labor - moral_cost
+        total_utility = u_consumption - disutility_labor - moral_cost - unemployment_penalty
         return float(np.clip(total_utility, -50.0, 50.0))
 
     def export_state(self) -> Dict[str, Any]:
@@ -173,24 +173,26 @@ class Employee(BaseAgent):
             "status": self.status.name,
             "cash": self.cash,
             "energy": self.energy,
-            "skill_level": self.skill_level,
+            "skill_level": round(self.skill_level, 2),
             "employed_by": self.employed_by,
-            "wage": self.wage,
+            "wage": round(self.wage, 1),
             "debt": self.debt,
-            "age": self.age
+            "age": self.age,
+            "unemployed_streak": self.unemployed_streak
         }
 
     def reset(self) -> None:
         super().reset()
-        self.skill_level = 1.0
         self.cash = 0.0
         self.energy = 1.0
         self.employed_by = None
         self.wage = 0.0
         self.debt = 0.0
         self.age = 20
+        self.unemployed_streak = 0
 
     def terminate(self, reason: str = "") -> None:
         super().terminate(reason)
+        self.status = LifeCycleStatus.DECEASED
         self.employed_by = None
         self.wage = 0.0

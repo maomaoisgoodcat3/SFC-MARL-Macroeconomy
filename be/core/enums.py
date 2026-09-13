@@ -13,6 +13,7 @@ class LifeCycleStatus(Enum):
     ACTIVE = auto()
     BANKRUPT = auto()
     DECEASED = auto()
+    DEAD = DECEASED       # Alias dong bo tuyet doi voi rule_engine
     TERMINATED = auto()
 
 class EventType(Enum):
@@ -30,4 +31,5 @@ class EventType(Enum):
     PRICE_ADJUSTED = "PRICE_ADJUSTED"
     AGENT_DIED = "AGENT_DIED"
     AGENT_BANKRUPT = "AGENT_BANKRUPT"
+    AGENT_BORN = "AGENT_BORN"          # Bo sung cho co che Demographic Turnover
     STATE_UPDATE = "STATE_UPDATE"

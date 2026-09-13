@@ -160,16 +160,18 @@ class Firm(BaseAgent):
         return float(np.clip(reward, -50.0, 50.0))
 
     def export_state(self) -> Dict[str, Any]:
+        # Loai bo cac ID ma hoac trung lap
+        valid_ids = list(set(self.employee_ids))
         return {
             "agent_id": self.agent_id,
             "type": self.agent_type.value,
             "status": self.status.name,
-            "cash": self.cash,
-            "capital_stock": self.capital_stock,
-            "debt": self.debt,
-            "headcount": len(self.employee_ids),
-            "last_profit": self.last_profit,
-            "last_revenue": self.last_revenue
+            "cash": round(self.cash, 1),
+            "capital_stock": round(self.capital_stock, 1),
+            "debt": round(self.debt, 1),
+            "headcount": len(valid_ids),
+            "last_profit": round(self.last_profit, 1),
+            "last_revenue": round(self.last_revenue, 1)
         }
 
     def reset(self) -> None:

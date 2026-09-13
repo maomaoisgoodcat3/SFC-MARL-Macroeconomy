@@ -95,8 +95,9 @@ class RLlibMacroEnv(MultiAgentEnv):
         self.agents = list(all_ids)
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
-        self.agents = list(self.possible_agents)
         raw_obs, infos = self.env.reset(seed=seed)
+        # Lay truc tiep danh sach cac tac tu dang ton tai thuc te trong env
+        self.agents = list(self.env.agents.keys())
 
         sanitized_obs: Dict[str, np.ndarray] = {}
         for agent_id, obs_vec in raw_obs.items():
@@ -127,7 +128,7 @@ class RLlibMacroEnv(MultiAgentEnv):
             clean_rewards[agent_id] = 0.0 if (np.isnan(val) or np.isinf(val)) else float(np.clip(val, -100.0, 100.0))
 
         # Cap nhat self.agents chi chua cac tac tu hien con song (chua bi bao cao dead)
-        self.agents = [aid for aid in self.possible_agents if aid not in self.env.reported_dead_agents]
+        self.agents = list(self.env.agents.keys())
 
         return clean_obs, clean_rewards, terminateds, truncateds, infos
 
