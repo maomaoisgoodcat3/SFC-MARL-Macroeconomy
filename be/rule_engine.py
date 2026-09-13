@@ -13,10 +13,11 @@ from be.agents.economy import Economy
 
 class RuleEngine:
     """
-    Hien phap kinh te the che v1.5.
-    - Dinh gia thi truong dong (Supply-Demand Inflation Engine).
-    - Luong toi thieu bao toan the luc dua tren chi phi sinh hoat (Efficiency Wage).
-    - Triet tieu hoan toan Multi-Hiring & Bao toan ke toan vi mo SFC.
+    Hien phap kinh te the che v2.0.
+    - Thi truong can bang hang hoa tu do (Walrasian Goods Market Clearing).
+    - Vong tuan hoan tien te khep kin tuyet doi (Closed-Loop SFC Accounting).
+    - Gia ca & Chi phi sinh hoat noi sinh dua tren Cung - Cau thuc.
+    - Ma sat tuyen dung & An han bao ho Doanh nghiep non tre.
     """
     def __init__(self, event_bus: EventBus):
         self.event_bus: EventBus = event_bus
@@ -28,7 +29,7 @@ class RuleEngine:
         deltas: Dict[str, Dict[str, Any]] = {agent_id: {} for agent_id in agents.keys()}
         events_map: Dict[str, List[str]] = {agent_id: [] for agent_id in agents.keys()}
 
-        # 1. THE CHE VI MO
+        # 1. THE CHE VI MO & THAM SO CO SO
         gov = self._get_single_agent(agents, Government)
         bank = self._get_single_agent(agents, Bank)
         eco = self._get_single_agent(agents, Economy)
@@ -58,7 +59,7 @@ class RuleEngine:
 
         eco_act = validated_actions.get(eco.agent_id)
         eco_cost_factor = float(eco_act.values[0]) if eco_act is not None else 1.0
-        living_cost = max(15.0, min(120.0, eco.base_living_cost * eco_cost_factor))
+        current_living_cost = max(15.0, min(120.0, eco.base_living_cost * eco_cost_factor))
 
         sup_act = validated_actions.get(sup.agent_id)
         if sup_act is not None:
@@ -80,11 +81,11 @@ class RuleEngine:
             if isinstance(a, Firm) and a.status in [LifeCycleStatus.ACTIVE, LifeCycleStatus.INITIALIZED]
         ]
 
-        # 2. THI TRUONG LAO DONG: LUONG HIEU DUNG THEO CHI PHI SINH HOAT
-        FIXED_OVERHEAD = 35.0
-        # Luong co ban dam bao du bu dap chi phi sinh hoat va thue
-        BASE_WAGE_ESTIMATE = max(35.0, living_cost * 1.15)
+        # CHI PHI MAT BANG THA NOI THEO THOI GIA (OVERHEAD SCALING)
+        OPERATING_OVERHEAD = max(15.0, 25.0 * (current_living_cost / 15.0))
+        BASE_WAGE_ESTIMATE = max(20.0, current_living_cost * 1.15)
 
+        # 2. THI TRUONG LAO DONG: MA SAT TUYEN DUNG & TRAN NHAN SU THEO VON
         claimed_workers = {e.agent_id for e in active_employees if e.employed_by is not None}
         shuffled_firms = list(np.random.permutation(active_firms))
 
@@ -103,14 +104,19 @@ class RuleEngine:
                 for e in current_workers
             )
 
+            max_firm_capacity = min(14, max(3, 3 + int(firm.capital_stock // 600.0)))
+            available_slots = max(0, max_firm_capacity - current_headcount)
+
             unemployed = [e for e in active_employees if e.agent_id not in claimed_workers]
             unemployed.sort(key=lambda w: getattr(w, 'skill_level', 1.0), reverse=True)
 
-            safety_reserve = FIXED_OVERHEAD + (current_wage_bill * 1.2)
+            safety_reserve = OPERATING_OVERHEAD + (current_wage_bill * 1.1)
             available_cash = max(0.0, firm.cash - safety_reserve)
 
-            if available_cash > (BASE_WAGE_ESTIMATE * 1.5) and unemployed and hire_signal > -0.1:
-                target_hire_count = min(len(unemployed), max(1, int(available_cash // (BASE_WAGE_ESTIMATE * 1.5))))
+            # Tuyen toi da 3 nguoi moi thang de tranh soc thanh khoan dot ngot
+            if available_cash > (BASE_WAGE_ESTIMATE * 1.3) and unemployed and hire_signal > -0.1 and available_slots > 0:
+                affordable_count = max(1, int(available_cash // (BASE_WAGE_ESTIMATE * 1.3)))
+                target_hire_count = min(len(unemployed), affordable_count, available_slots, 3)
 
                 for target_emp in unemployed[:target_hire_count]:
                     claimed_workers.add(target_emp.agent_id)
@@ -125,7 +131,7 @@ class RuleEngine:
                     events_map[firm.agent_id].append(EventType.HIRE.value)
                     events_map[target_emp.agent_id].append(EventType.HIRE.value)
 
-            elif current_headcount > 0 and (firm.cash < 50.0 or hire_signal < -0.4):
+            elif current_headcount > 0 and (firm.cash < 40.0 or hire_signal < -0.4):
                 num_to_fire = 1 if hire_signal >= -0.7 else max(1, current_headcount // 2)
                 sorted_workers = sorted(current_workers, key=lambda w: getattr(w, 'skill_level', 1.0))
 
@@ -139,8 +145,9 @@ class RuleEngine:
                     events_map[firm.agent_id].append(EventType.FIRE.value)
                     events_map[fired_emp.agent_id].append(EventType.FIRE.value)
 
-        # 3. SAN XUAT TAO GIA TRI THUC & TINH TONG SUC CUNG
-        total_market_production = 0.0
+        # 3. SAN XUAT HIEN VAT & CHI TRA TIEN LUONG
+        firm_physical_outputs: Dict[str, float] = {}
+        firm_wage_bills: Dict[str, float] = {}
         worker_gross_incomes: Dict[str, float] = {e.agent_id: 0.0 for e in active_employees}
 
         for firm in active_firms:
@@ -149,7 +156,7 @@ class RuleEngine:
                 if (e.employed_by == firm.agent_id or e.agent_id in deltas[firm.agent_id].get("hired_employees", []))
                 and e.agent_id not in deltas[firm.agent_id].get("fired_employees", [])
             ]
-            firm_wage_bill = 0.0
+            wage_bill = 0.0
             firm_output = 0.0
 
             for emp in firm_workers:
@@ -158,10 +165,10 @@ class RuleEngine:
                 assigned_wage = deltas[emp.agent_id].get("wage", emp.wage)
                 wage = assigned_wage if assigned_wage > 0 else BASE_WAGE_ESTIMATE
 
-                firm_wage_bill += wage
+                wage_bill += wage
                 worker_gross_incomes[emp.agent_id] += wage
                 deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) + wage
-                deltas[emp.agent_id]["energy_delta"] = deltas[emp.agent_id].get("energy_delta", 0.0) - (effort * 0.12 + 0.03)
+                deltas[emp.agent_id]["energy_delta"] = deltas[emp.agent_id].get("energy_delta", 0.0) - (effort * 0.10 + 0.02)
                 deltas[emp.agent_id]["executed_work_effort"] = effort
 
                 firm_output += (effort * emp.skill_level * 80.0 * firm.productivity_factor)
@@ -170,49 +177,69 @@ class RuleEngine:
                 events_map[firm.agent_id].append(EventType.WAGE_PAID.value)
                 events_map[emp.agent_id].append(EventType.WAGE_PAID.value)
 
-            revenue = firm_output * 1.25
-            net_profit = revenue - firm_wage_bill - FIXED_OVERHEAD
+            firm_physical_outputs[firm.agent_id] = firm_output
+            firm_wage_bills[firm.agent_id] = wage_bill
 
-            deltas[firm.agent_id]["cash_delta"] = deltas[firm.agent_id].get("cash_delta", 0.0) + net_profit
-            deltas[firm.agent_id]["executed_revenue"] = revenue
-            deltas[firm.agent_id]["executed_profit"] = net_profit
-            total_market_production += revenue
+        total_industrial_output = sum(firm_physical_outputs.values())
 
-            deltas[gov.agent_id]["treasury_overhead"] = deltas[gov.agent_id].get("treasury_overhead", 0.0) + FIXED_OVERHEAD
-
-        # 4. TIEU DUNG & DONG LUC LAM PHAT
+        # 4. TIEU DUNG, THI TRUONG CAN BANG HANG HOA & DONG THAI LAM PHAT NOI SINH
         total_consumer_spending = 0.0
         for emp in active_employees:
             emp_act = validated_actions.get(emp.agent_id)
             consume_ratio = float(emp_act.values[2]) if emp_act is not None else 0.5
-            cost = living_cost * (0.85 + 0.3 * consume_ratio)
+            target_cost = current_living_cost * (0.85 + 0.3 * consume_ratio)
 
-            deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) - cost
-            # Tang cuong kha nang phuc hoi the luc khi an uong day du
+            # Nguoi lao dong trich tien mat thuc te de mua gio hang tieu dung
+            deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) - target_cost
             available_cash_estimate = emp.cash + deltas[emp.agent_id].get("cash_delta", 0.0)
-            energy_recovery = 0.45 if available_cash_estimate >= cost else 0.10
+            energy_recovery = 0.45 if available_cash_estimate >= 0.0 else 0.15
             deltas[emp.agent_id]["energy_delta"] = deltas[emp.agent_id].get("energy_delta", 0.0) + energy_recovery
-            deltas[emp.agent_id]["executed_consumption"] = cost
-            total_consumer_spending += cost
+            deltas[emp.agent_id]["executed_consumption"] = target_cost
+            total_consumer_spending += target_cost
 
-            self._emit_event(EventType.GOODS_PURCHASED, emp.agent_id, eco.agent_id, {"amount": cost}, timestep)
+            self._emit_event(EventType.GOODS_PURCHASED, emp.agent_id, eco.agent_id, {"amount": target_cost}, timestep)
 
-        # CAP NHAT DONG LAM PHAT DUA TREN TI LE CUNG - CAU (SUPPLY-DEMAND ENGINE)
-        aggregate_demand = total_consumer_spending
-        aggregate_supply = max(100.0, total_market_production)
-        demand_supply_gap = (aggregate_demand - aggregate_supply) / aggregate_supply
-        
-        # Lam phat bien dong mem tu -5% den +15% moi thang
-        monthly_inflation = float(np.clip(demand_supply_gap * 0.25, -0.05, 0.15))
+        # PHAN PHOI DOANH THU KHEP KIN SFC:
+        # Toan bo $ tieu dung cua nguoi dan chay thang ve cac Doanh nghiep theo ty le san luong
+        total_industrial_revenue = 0.0
+        for firm in active_firms:
+            output_q = firm_physical_outputs.get(firm.agent_id, 0.0)
+            if total_industrial_output > 0.0:
+                revenue_share = output_q / total_industrial_output
+                firm_revenue = total_consumer_spending * revenue_share
+            else:
+                firm_revenue = 0.0
+
+            wage_bill = firm_wage_bills.get(firm.agent_id, 0.0)
+            net_profit = firm_revenue - wage_bill - OPERATING_OVERHEAD
+
+            deltas[firm.agent_id]["cash_delta"] = deltas[firm.agent_id].get("cash_delta", 0.0) + (firm_revenue - wage_bill - OPERATING_OVERHEAD)
+            deltas[firm.agent_id]["executed_revenue"] = firm_revenue
+            deltas[firm.agent_id]["executed_profit"] = net_profit
+            total_industrial_revenue += firm_revenue
+
+            deltas[gov.agent_id]["treasury_overhead"] = deltas[gov.agent_id].get("treasury_overhead", 0.0) + OPERATING_OVERHEAD
+
+        # CAP NHAT DONG MAT BANG GIA THI TRUONG (ENDOGENOUS MARKET CLEARING PRICE)
+        # Price P_t = Total Spending / Total Real Output
+        market_price_per_unit = total_consumer_spending / max(50.0, total_industrial_output)
+        REFERENCE_EQUILIBRIUM_PRICE = 0.28
+        target_living_cost = float(np.clip(15.0 * (market_price_per_unit / REFERENCE_EQUILIBRIUM_PRICE), 15.0, 115.0))
+
+        # Thich nghi luot song mem (Adaptive Price Expectation)
+        prev_cost = eco.base_living_cost
+        updated_living_cost = float(0.80 * prev_cost + 0.20 * target_living_cost)
+        monthly_inflation = float(np.clip((updated_living_cost - prev_cost) / max(1.0, prev_cost), -0.15, 0.20))
+
         eco.inflation_rate = monthly_inflation
-        eco.base_living_cost = float(np.clip(eco.base_living_cost * (1.0 + monthly_inflation), 15.0, 110.0))
-        
+        eco.base_living_cost = updated_living_cost
         deltas[eco.agent_id]["liquidity_delta"] = total_consumer_spending
         deltas[eco.agent_id]["inflation"] = monthly_inflation
-        deltas[eco.agent_id]["base_living_cost"] = eco.base_living_cost
+        deltas[eco.agent_id]["base_living_cost"] = updated_living_cost
 
-        # Xu ly Lao dong That nghiep
+        # XU LY LAO DONG THAT NGHIEP (AN SINH XA HOI THA NOI THEO THOI GIA)
         total_subsidies_spent = 0.0
+        total_informal_production = 0.0
         for emp in active_employees:
             effective_employer = deltas[emp.agent_id].get("employed_by", emp.employed_by)
             is_employed = effective_employer is not None
@@ -220,16 +247,17 @@ class RuleEngine:
             if not is_employed:
                 streak = getattr(emp, "unemployed_streak", 0) + 1
                 deltas[emp.agent_id]["unemployed_streak"] = streak
-                deltas[emp.agent_id]["energy_delta"] = deltas[emp.agent_id].get("energy_delta", 0.0) - min(0.15, 0.04 * streak)
+                deltas[emp.agent_id]["energy_delta"] = deltas[emp.agent_id].get("energy_delta", 0.0) - min(0.12, 0.03 * streak)
 
-                informal_income = emp.skill_level * 15.0
+                # Thu nhap phi chinh thuc tu dong neo theo thoi gia
+                informal_income = emp.skill_level * max(10.0, updated_living_cost * 0.30)
                 worker_gross_incomes[emp.agent_id] += informal_income
                 deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) + informal_income
-                total_market_production += informal_income
+                total_informal_production += informal_income
 
                 current_estimated_cash = emp.cash + deltas[emp.agent_id].get("cash_delta", 0.0)
                 if current_estimated_cash < 50.0 and gov.treasury > 1000.0:
-                    relief_amount = 40.0 if streak <= 3 else 15.0
+                    relief_amount = min(updated_living_cost * 0.45, 50.0 if streak <= 3 else 25.0)
                     deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) + relief_amount
                     total_subsidies_spent += relief_amount
             else:
@@ -322,12 +350,16 @@ class RuleEngine:
         deltas[gov.agent_id]["tax_collected"] = total_tax_collected
         self._emit_event(EventType.TAX_COLLECTED, "MARKET", gov.agent_id, {"amount": total_tax_collected}, timestep)
 
-        # 7. THANH TRA
+        # 7. THANH TRA & PHAT
         audits_count = 0
         violations_count = 0
         total_fines_collected = 0.0
 
         for agent, evaded_amount, _ in tax_evasion_records:
+            # AN HAN 6 THANG: Doanh nghiep moi thanh lap duoc mien thanh tra thue
+            if isinstance(agent, Firm) and getattr(agent, "age_months", 99) <= 6:
+                continue
+
             if np.random.rand() < audit_rate:
                 audits_count += 1
                 violations_count += 1
@@ -335,7 +367,6 @@ class RuleEngine:
                 deltas[agent.agent_id]["cash_delta"] = deltas[agent.agent_id].get("cash_delta", 0.0) - fine
                 total_fines_collected += fine
                 
-                # Payload chi tiet: So tien phat va so tien da tron
                 self._emit_event(
                     EventType.PENALTY_ENFORCED, 
                     sup.agent_id, 
@@ -358,10 +389,13 @@ class RuleEngine:
         for firm in active_firms:
             projected_cash = firm.cash + deltas[firm.agent_id].get("cash_delta", 0.0)
             projected_debt = firm.debt + deltas[firm.agent_id].get("debt_delta", 0.0)
+            firm_age = getattr(firm, "age_months", 99)
 
+            # Nguong an han am tien xuong -400$ va mien pha san khong nguoi trong 3 thang dau
+            insolvency_cash_limit = -400.0 if firm_age <= 6 else -200.0
             is_insolvent = (
-                (len(firm.employee_ids) == 0 and projected_cash <= 0.0 and timestep > 12) or
-                (projected_cash < -200.0) or
+                (len(firm.employee_ids) == 0 and projected_cash <= 0.0 and firm_age > 3) or
+                (projected_cash < insolvency_cash_limit) or
                 (projected_debt > firm.capital_stock * 2.0 and projected_cash < 0.0)
             )
 
@@ -395,7 +429,7 @@ class RuleEngine:
             projected_energy = emp.energy + deltas[emp.agent_id].get("energy_delta", 0.0)
             deltas[emp.agent_id]["age_increment"] = 1 if (timestep % 12 == 0) else 0
 
-            # Ngưỡng tử vong sinh học hợp lý
+            # Nguong tu vong sinh hoc hop ly
             if projected_cash < -400.0 or projected_energy <= 0.0 or (emp.age + deltas[emp.agent_id]["age_increment"]) >= emp.max_age:
                 new_deaths += 1
                 deltas[emp.agent_id]["status"] = LifeCycleStatus.DECEASED
@@ -424,7 +458,7 @@ class RuleEngine:
             if deltas[e.agent_id].get("status") not in [LifeCycleStatus.DECEASED, LifeCycleStatus.DEAD, LifeCycleStatus.TERMINATED]
         ]
         deltas[gov.agent_id]["current_gini"] = self._compute_gini(active_wealths)
-        deltas[gov.agent_id]["current_gdp"] = total_market_production
+        deltas[gov.agent_id]["current_gdp"] = total_industrial_revenue + total_informal_production
 
         # 10. DONG GOI TRANSITIONS
         results: Dict[str, TransitionResult] = {}

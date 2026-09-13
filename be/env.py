@@ -92,8 +92,9 @@ class MacroEnvironment:
                     tax_morale=float(np.random.uniform(0.5, 0.85)),
                     initial_capital=init_cap
                 )
+                agent.age_months = 0
                 seed_cash = float(np.random.uniform(3000.0, 5000.0))
-                self.gov.treasury -= seed_cash  # Trich tu Kho bac sang Firm
+                self.gov.treasury -= seed_cash
                 agent.cash = seed_cash
 
             elif isinstance(agent, Employee):
@@ -117,6 +118,9 @@ class MacroEnvironment:
         Dict[str, np.ndarray], Dict[str, float], Dict[str, bool], Dict[str, bool], Dict[str, Any]
     ]:
         self.timestep += 1
+        for a in self.agents.values():
+            if isinstance(a, Firm):
+                a.age_months = getattr(a, "age_months", 0) + 1
 
         validated_actions: Dict[str, Action] = {}
         for agent_id, raw_vals in action_dict.items():
@@ -170,15 +174,41 @@ class MacroEnvironment:
                     a.employed_by = None
                     a.wage = 0.0
 
-        # A. Can bang dong dan so (Muc tieu 45 - 55 lao dong)
-        current_emp_count = sum(1 for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE)
-        deficit = max(0, 50 - current_emp_count)
-        
-        # Ty le sinh tang vot neu dan so bi hut qua sau
-        p_birth = 0.10 if deficit == 0 else min(0.95, 0.25 + 0.15 * deficit)
-        num_newborns = 1 if (np.random.rand() < p_birth and current_emp_count < 55) else 0
-        if current_emp_count < 35:
-            num_newborns = 2  # Ho tro sinh doi de cuu nguy dan so
+        # A. DIEU TIET DAN SO THEO SUC TAI KINH TE (ENDOGENOUS DEMOGRAPHIC CAPACITY)
+        active_emps_list = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
+        current_emp_count = len(active_emps_list)
+        unemployed_count = sum(1 for e in active_emps_list if e.employed_by is None)
+        unemployment_rate = (unemployed_count / current_emp_count) if current_emp_count > 0 else 0.0
+
+        employed_emps = [e for e in active_emps_list if e.employed_by is not None]
+        avg_wage = (sum(e.wage for e in employed_emps) / len(employed_emps)) if employed_emps else 25.0
+        living_standard_ratio = avg_wage / max(1.0, self.eco.base_living_cost)
+
+        # Chot chan ky thuat an toan phan cung (30 <= Emp <= 85)
+        HARD_MIN_EMP = 30
+        HARD_MAX_EMP = 85
+
+        num_newborns = 0
+        if current_emp_count < HARD_MIN_EMP:
+            # Cuu nguy dan so khan cap neu tut duoi nguong an toan
+            num_newborns = 2 if current_emp_count < 20 else 1
+        elif current_emp_count < HARD_MAX_EMP:
+            # Xac suat sinh phu thuoc vao doi song kinh te:
+            # Thuong neu ty le that nghiep thap (<10%) va luong cao hon muc song (>1.2)
+            p_birth = 0.12
+            if unemployment_rate < 0.10:
+                p_birth += 0.15
+            elif unemployment_rate > 0.30:
+                p_birth -= 0.10
+
+            if living_standard_ratio > 1.25:
+                p_birth += 0.15
+            elif living_standard_ratio < 0.90:
+                p_birth -= 0.08
+
+            p_birth = float(np.clip(p_birth, 0.02, 0.50))
+            if np.random.rand() < p_birth and self.gov.treasury >= 600.0:
+                num_newborns = 1
 
         for _ in range(num_newborns):
             new_eid = f"emp_{self.next_emp_id}"
@@ -204,25 +234,30 @@ class MacroEnvironment:
                 timestep=self.timestep
             ))
 
-        # B. Khoi nghiep dua tren Cung lao dong thuc te (Labor-Conditioned Entry)
+        # B. KHOI NGHIEP THEO CO HOI THI TRUONG (ENDOGENOUS MARKET ENTRY)
         active_firms_list = [a for a in self.agents.values() if isinstance(a, Firm) and a.status == LifeCycleStatus.ACTIVE]
-        active_emps_list = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
-        
         current_firm_count = len(active_firms_list)
-        unemployed_count = sum(1 for e in active_emps_list if e.employed_by is None)
-        unemployment_rate = (unemployed_count / len(active_emps_list)) if active_emps_list else 0.0
+        HARD_MAX_FIRMS = 7
 
-        # Dieu kien sinh firm nghiem ngat:
-        # 1. Chi mo them khi co du nhan luc de tuyen (>= 3 nguoi that nghiep va ty le that nghiep >= 15%)
-        # 2. Hoac thi truong roi vao nguy co doc quyen/sup do (< 2 firms) va van con nguoi de thue
-        has_adequate_labor = (unemployed_count >= 3 and unemployment_rate >= 0.15)
+        # Cuu ho khẩn cấp: Thi truong chi con 1 firm va con nguoi de tuyen dung
         need_emergency_firm = (current_firm_count < 2 and unemployed_count >= 2)
-        market_expansion = (self.gov.current_gdp > 3000.0 and current_firm_count < 6 and has_adequate_labor and np.random.rand() < 0.08)
+        
+        # Mo rong noi sinh: Con cho trong (< 7 firms), co du lao dong roi ranh de thue, va Kho bac du ngan sach
+        avg_firm_profit = float(np.mean([getattr(f, "last_profit", 0.0) for f in active_firms_list])) if active_firms_list else 0.0
+        is_market_healthy = (avg_firm_profit >= -15.0) # Thi truong khong trong trang thai sup do hang loat
+        market_expansion = (
+            current_firm_count < HARD_MAX_FIRMS and 
+            unemployed_count >= 3 and 
+            unemployment_rate >= 0.12 and 
+            is_market_healthy and 
+            self.gov.treasury >= 4000.0 and 
+            np.random.rand() < 0.12
+        )
 
         if need_emergency_firm or market_expansion:
             new_fid = f"firm_{self.next_firm_id}"
             self.next_firm_id += 1
-            grant_firm = 4000.0 if self.gov.treasury >= 8000.0 else 1500.0
+            grant_firm = 3500.0 if self.gov.treasury >= 8000.0 else 1500.0
             self.gov.treasury -= grant_firm
 
             new_firm = Firm(agent_id=new_fid)
@@ -232,6 +267,7 @@ class MacroEnvironment:
                 tax_morale=float(np.random.uniform(0.5, 0.85)),
                 initial_capital=8000.0
             )
+            new_firm.age_months = 0
             new_firm.cash = grant_firm
             self.agents[new_fid] = new_firm
             self.event_bus.publish(Event(
