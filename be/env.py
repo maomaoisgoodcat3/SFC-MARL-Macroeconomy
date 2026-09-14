@@ -14,8 +14,12 @@ from be.rule_engine import RuleEngine
 
 class MacroEnvironment:
     """
-    Mo phong Kinh te vi mo the che da tac tu.
-    Bao toan dong tien (SFC) & Can bang dong dan so.
+    Mô phỏng Kinh tế Vĩ mô Đa Tác tử Thể chế (Institutional MARL Environment).
+    - Hạch toán Nhất quán Luồng - Tích lũy (Godley & Lavoie, 2007).
+    - Phân phối năng lực Log-Normal (Mincer, 1974; Saez, 2001).
+    - Vốn mồi sinh tồn nội sinh Stone-Geary (Ackerman & Alstott, 1999).
+    - Gia nhập thị trường theo Tobin's Q và quy mô MES (Bain, 1956; Tobin, 1969).
+    - Vận tốc lưu thông tiền tệ Fisher (Fisher, 1911).
     """
     def __init__(self, num_employees: int = 50, num_firms: int = 5, max_steps: int = 240):
         self.num_employees: int = num_employees
@@ -53,16 +57,15 @@ class MacroEnvironment:
             self.agents[e_id] = Employee(agent_id=e_id)
 
     def _sample_skill(self) -> float:
-        """Phan hoa 4 bac ky nang ro ret."""
-        roll = np.random.rand()
-        if roll < 0.35:
-            return float(np.random.uniform(0.6, 0.9))   # Pho thong
-        elif roll < 0.75:
-            return float(np.random.uniform(1.1, 1.6))   # Ban chuyen
-        elif roll < 0.95:
-            return float(np.random.uniform(1.8, 2.5))   # Ky su
-        else:
-            return float(np.random.uniform(2.8, 3.8))   # Chuyen gia
+        """
+        Phân phối kỹ năng liên tục Log-Normal (Mincer, 1974; Saez, 2001).
+        s_i = s_min + exp(mu + sigma * Z), triệt tiêu phân chia bậc rời rạc nhân tạo.
+        """
+        s_min = 0.50
+        mu = 0.0
+        sigma = 0.35
+        raw_skill = float(np.random.lognormal(mean=mu, sigma=sigma))
+        return float(np.clip(s_min + raw_skill * 0.45, 0.60, 4.0))
 
     def reset(self, seed: Optional[int] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
         if seed is not None:
@@ -75,14 +78,17 @@ class MacroEnvironment:
         self.event_bus.clear()
         self._create_world()
 
-        # GDP ban dau luon la 0.0 de khong lam hong truc bieu do
+        # KHỞI TẠO THỂ CHẾ VÀ THUỘC TÍNH PHÒNG THỦ LỖI RUNTIME
         self.gov.initialize(initial_treasury=1000000.0, initial_worker_tax=0.15, initial_firm_tax=0.20)
         self.gov.current_gdp = 0.0
         self.bank.initialize(initial_reserves=500000.0, initial_lending_rate=0.06, initial_deposit_rate=0.02)
-        self.eco.initialize(initial_living_cost=15.0, initial_housing_inventory=100, initial_house_price=1000.0)
+        self.eco.initialize(initial_living_cost=20.0, initial_housing_inventory=100, initial_house_price=1000.0)
         self.sup.initialize(initial_budget=50000.0, initial_audit_rate=0.05, initial_fine_multiplier=1.5)
+        
+        # Đảm bảo các thuộc tính thống kê tồn tại ngay tại timestep 0
+        self.sup.violations_detected = 0
+        self.sup.fines_collected = 0.0
 
-        # KHOI PHUC DUNG NHANH EMPLOYEE VA FIRM
         for agent in self.agents.values():
             if isinstance(agent, Firm):
                 init_cap = float(np.random.uniform(8000.0, 14000.0))
@@ -99,14 +105,14 @@ class MacroEnvironment:
 
             elif isinstance(agent, Employee):
                 start_cash = float(np.random.uniform(200.0, 400.0))
-                self.gov.treasury -= start_cash # Trich tu Kho bac sang Emp
+                self.gov.treasury -= start_cash
                 agent.initialize(
                     skill_level=self._sample_skill(),
                     risk_aversion=float(np.random.uniform(0.3, 0.8)),
                     tax_morale=float(np.random.uniform(0.5, 0.95)),
                     initial_cash=start_cash,
                     initial_energy=float(np.random.uniform(0.8, 1.2)),
-                    age=int(np.random.randint(20, 50))
+                    age=int(np.random.randint(18, 50))
                 )
 
         raw_state = self.get_raw_environment_state()
@@ -150,7 +156,13 @@ class MacroEnvironment:
                     self.agents[agent_id].status = trans_res.state_delta["status"]
                 rewards_all[agent_id] = self.agents[agent_id].calculate_reward(trans_res)
 
-        # DEMOGRAPHIC TURNOVER DONG BO KHO BAC
+        # CẬP NHẬT TRỰC TIẾP BIẾN THEO DÕI THANH TRA TRÊN SUPERVISOR
+        sup_delta = transition_results.get(self.sup.agent_id)
+        if sup_delta is not None:
+            self.sup.fines_collected = sup_delta.state_delta.get("fines_collected", getattr(self.sup, "fines_collected", 0.0))
+            self.sup.violations_detected = sup_delta.state_delta.get("violations_detected", getattr(self.sup, "violations_detected", 0))
+
+        # QUẢN TRỊ TỬ VONG & BẢO TOÀN DI SẢN KHO BẠC (SFC CONSISTENCY)
         dead_emps = [aid for aid in self.agents.items() if isinstance(aid[1], Employee) and aid[1].status in [LifeCycleStatus.DECEASED, LifeCycleStatus.DEAD, LifeCycleStatus.TERMINATED]]
         bankrupt_firms = [aid for aid in self.agents.items() if isinstance(aid[1], Firm) and aid[1].status == LifeCycleStatus.BANKRUPT]
 
@@ -174,46 +186,35 @@ class MacroEnvironment:
                     a.employed_by = None
                     a.wage = 0.0
 
-        # A. DIEU TIET DAN SO THEO SUC TAI KINH TE (ENDOGENOUS DEMOGRAPHIC CAPACITY)
+        # A. ĐIỀU TIẾT DÂN SỐ THEO MỨC SỐNG THỰC TẾ (DEMOGRAPHIC ENDOGENOUS CAPACITY)
         active_emps_list = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
         current_emp_count = len(active_emps_list)
         unemployed_count = sum(1 for e in active_emps_list if e.employed_by is None)
         unemployment_rate = (unemployed_count / current_emp_count) if current_emp_count > 0 else 0.0
 
         employed_emps = [e for e in active_emps_list if e.employed_by is not None]
-        avg_wage = (sum(e.wage for e in employed_emps) / len(employed_emps)) if employed_emps else 25.0
+        avg_wage = (sum(e.wage for e in employed_emps) / len(employed_emps)) if employed_emps else self.eco.base_living_cost
         living_standard_ratio = avg_wage / max(1.0, self.eco.base_living_cost)
 
-        # Chot chan ky thuat an toan phan cung (30 <= Emp <= 85)
+        # Rào chắn phần cứng an toàn tính toán
         HARD_MIN_EMP = 30
         HARD_MAX_EMP = 85
 
         num_newborns = 0
         if current_emp_count < HARD_MIN_EMP:
-            # Cuu nguy dan so khan cap neu tut duoi nguong an toan
             num_newborns = 2 if current_emp_count < 20 else 1
         elif current_emp_count < HARD_MAX_EMP:
-            # Xac suat sinh phu thuoc vao doi song kinh te:
-            # Thuong neu ty le that nghiep thap (<10%) va luong cao hon muc song (>1.2)
-            p_birth = 0.12
-            if unemployment_rate < 0.10:
-                p_birth += 0.15
-            elif unemployment_rate > 0.30:
-                p_birth -= 0.10
-
-            if living_standard_ratio > 1.25:
-                p_birth += 0.15
-            elif living_standard_ratio < 0.90:
-                p_birth -= 0.08
-
-            p_birth = float(np.clip(p_birth, 0.02, 0.50))
-            if np.random.rand() < p_birth and self.gov.treasury >= 600.0:
+            p_birth = 0.10 + 0.15 * max(0.0, 1.0 - unemployment_rate) + 0.10 * max(0.0, living_standard_ratio - 1.0)
+            p_birth = float(np.clip(p_birth, 0.02, 0.40))
+            if np.random.rand() < p_birth and self.gov.treasury >= (3.0 * self.eco.base_living_cost):
                 num_newborns = 1
 
+        # Trợ cấp sinh tồn cơ sở Stone-Geary (Ackerman & Alstott, 1999)
+        grant_per_newborn = float(3.0 * self.eco.base_living_cost)
         for _ in range(num_newborns):
             new_eid = f"emp_{self.next_emp_id}"
             self.next_emp_id += 1
-            grant = 300.0 if self.gov.treasury >= 600.0 else 50.0
+            grant = grant_per_newborn if self.gov.treasury >= (grant_per_newborn * 2.0) else (0.5 * grant_per_newborn)
             self.gov.treasury -= grant
             
             new_emp = Employee(agent_id=new_eid)
@@ -230,35 +231,40 @@ class MacroEnvironment:
                 event_type=EventType.AGENT_BORN,
                 source_id="SOCIETY",
                 target_id=new_eid,
-                payload={"cash": new_emp.cash, "skill": new_emp.skill_level},
+                payload={"cash": round(new_emp.cash, 1), "skill": round(new_emp.skill_level, 2)},
                 timestep=self.timestep
             ))
 
-        # B. KHOI NGHIEP THEO CO HOI THI TRUONG (ENDOGENOUS MARKET ENTRY)
+        # B. GIA NHẬP THỊ TRƯỜNG THEO TOBIN'S Q & NGUỒN LAO ĐỘNG DƯ THỪA (Mortensen & Pissarides, 1994)
         active_firms_list = [a for a in self.agents.values() if isinstance(a, Firm) and a.status == LifeCycleStatus.ACTIVE]
         current_firm_count = len(active_firms_list)
         HARD_MAX_FIRMS = 7
 
-        # Cuu ho khẩn cấp: Thi truong chi con 1 firm va con nguoi de tuyen dung
-        need_emergency_firm = (current_firm_count < 2 and unemployed_count >= 2)
-        
-        # Mo rong noi sinh: Con cho trong (< 7 firms), co du lao dong roi ranh de thue, va Kho bac du ngan sach
-        avg_firm_profit = float(np.mean([getattr(f, "last_profit", 0.0) for f in active_firms_list])) if active_firms_list else 0.0
-        is_market_healthy = (avg_firm_profit >= -15.0) # Thi truong khong trong trang thai sup do hang loat
-        market_expansion = (
-            current_firm_count < HARD_MAX_FIRMS and 
-            unemployed_count >= 3 and 
-            unemployment_rate >= 0.12 and 
-            is_market_healthy and 
-            self.gov.treasury >= 4000.0 and 
-            np.random.rand() < 0.12
+        total_market_capital = sum(f.capital_stock for f in active_firms_list)
+        total_market_profit = sum(getattr(f, "last_profit", 0.0) for f in active_firms_list)
+        market_return_on_capital = (total_market_profit / max(100.0, total_market_capital)) if total_market_capital > 0 else 0.0
+
+        is_profitable_industry = (market_return_on_capital > self.bank.deposit_rate)
+        has_excess_labor = (unemployment_rate > 0.08 and unemployed_count >= 2)
+        emergency_market_repair = (current_firm_count < 2 and unemployed_count >= 2)
+
+        should_incorporate = (
+            emergency_market_repair or 
+            (current_firm_count < HARD_MAX_FIRMS and is_profitable_industry and has_excess_labor and np.random.rand() < 0.15)
         )
 
-        if need_emergency_firm or market_expansion:
+        if should_incorporate:
             new_fid = f"firm_{self.next_firm_id}"
             self.next_firm_id += 1
-            grant_firm = 3500.0 if self.gov.treasury >= 8000.0 else 1500.0
-            self.gov.treasury -= grant_firm
+
+            # Vốn mồi quy mô tối thiểu MES (Bain, 1956)
+            current_p = max(0.5, self.eco.base_living_cost)
+            grant_firm = float(np.clip(100.0 * current_p, 1500.0, 5000.0))
+            if self.gov.treasury >= (grant_firm * 2.0):
+                self.gov.treasury -= grant_firm
+            else:
+                grant_firm = 1000.0
+                self.gov.treasury -= grant_firm
 
             new_firm = Firm(agent_id=new_fid)
             new_firm.initialize(
@@ -294,15 +300,32 @@ class MacroEnvironment:
         return observations, rewards, terminateds, truncateds, infos
 
     def get_raw_environment_state(self) -> Dict[str, Any]:
+        """
+        Chuẩn hóa tensor vĩ mô theo Fisher (1911) và Allingham & Sandmo (1972).
+        Đảm bảo truy cập an toàn, loại bỏ triệt để các lỗi AttributeError.
+        """
         active_employees = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
         unemployed_count = sum(1 for e in active_employees if e.employed_by is None)
         unemployment_rate = (unemployed_count / len(active_employees)) if active_employees else 0.0
 
         employed = [e for e in active_employees if e.employed_by is not None]
-        avg_wage = (sum(e.wage for e in employed) / len(employed)) if employed else 25.0
+        avg_wage = (sum(e.wage for e in employed) / len(employed)) if employed else self.eco.base_living_cost
 
         active_firms = [a for a in self.agents.values() if isinstance(a, Firm) and a.status == LifeCycleStatus.ACTIVE]
         total_credit_demand = sum(f.debt for f in active_firms)
+
+        total_emp_cash = sum(a.cash for a in active_employees)
+        total_firm_cash = sum(a.cash for a in active_firms)
+        m2_supply = max(1.0, self.gov.treasury + self.bank.reserves + total_emp_cash + total_firm_cash)
+
+        # Vận tốc lưu thông tiền tệ: V = GDP / M2 (Fisher, 1911)
+        velocity_of_money = float(self.gov.current_gdp / m2_supply)
+
+        # Thất thu thuế ước tính từ số tiền phạt và số vụ phát hiện (Allingham & Sandmo, 1972)
+        fines = getattr(self.sup, 'fines_collected', 0.0)
+        multiplier = max(1.0, getattr(self.sup, 'fine_multiplier', 1.5))
+        violations = getattr(self.sup, 'violations_detected', 0)
+        real_evasion_estimate = float((fines / multiplier) + (violations * self.eco.base_living_cost * 0.5))
 
         return {
             "timestep": self.timestep,
@@ -315,9 +338,9 @@ class MacroEnvironment:
                 "bank_lending_rate": self.bank.lending_rate,
                 "unemployment_rate": unemployment_rate,
                 "average_wage": avg_wage,
-                "market_demand_factor": 1.0,
+                "market_demand_factor": float(np.clip(velocity_of_money * 10.0, 0.1, 5.0)),
                 "total_credit_demand": total_credit_demand,
-                "estimated_tax_evasion": float(self.sup.violations_detected * 50.0),
+                "estimated_tax_evasion": real_evasion_estimate,
                 "aggregate_demand": self.eco.step_trade_volume,
                 "aggregate_supply": sum(f.capital_stock for f in active_firms)
             }
