@@ -14,22 +14,33 @@ from be.rule_engine import RuleEngine
 
 class MacroEnvironment:
     """
-    Mô phỏng Kinh tế Vĩ mô Đa Tác tử Thể chế (Institutional MARL Environment).
-    - Hạch toán Nhất quán Luồng - Tích lũy (Godley & Lavoie, 2007).
-    - Phân phối năng lực Log-Normal (Mincer, 1974; Saez, 2001).
-    - Vốn mồi sinh tồn nội sinh Stone-Geary (Ackerman & Alstott, 1999).
-    - Gia nhập thị trường theo Tobin's Q và quy mô MES (Bain, 1956; Tobin, 1969).
-    - Vận tốc lưu thông tiền tệ Fisher (Fisher, 1911).
+    Môi trường Kinh tế Vĩ mô Đa Tác tử Thể chế (Institutional MARL Environment).
+    
+    CƠ SỞ HỌC THUẬT & TRÍCH DẪN QUỐC TẾ:
+    -------------------------------------------------------------------------
+    1. Mincer, J. (1974). "Schooling, Experience, and Earnings". NBER.
+       -> Phân phối kỹ năng liên tục Log-Normal (mu=0.0, sigma=0.35).
+    2. Bain, J. S. (1956). "Barriers to New Competition". Harvard University Press.
+       -> Quy mô hiệu dụng tối thiểu (Minimum Efficient Scale - MES) cho vốn mồi startup.
+    3. Jorgenson, D. W. (1963). "Capital Theory and Investment Behavior". AER.
+       -> Điều kiện gia nhập ngành dựa trên Suất sinh lời trên Vốn so với Lãi suất phi rủi ro.
+    4. Mortensen, D. T., & Pissarides, C. A. (1994). "Job Creation and Job Destruction". RES.
+       -> Dư địa lao động thất nghiệp kích thích khởi sự doanh nghiệp mới.
+    5. Fisher, I. (1911). "The Purchasing Power of Money". Macmillan.
+       -> Vận tốc lưu thông tiền tệ V = GDP / M2 trong tensor quan sát vĩ mô.
+    -------------------------------------------------------------------------
     """
-    def __init__(self, num_employees: int = 50, num_firms: int = 5, max_steps: int = 240):
+    def __init__(self, num_employees: int = 50, num_firms: int = 5, num_banks: int = 1, max_steps: int = 240):
         self.num_employees: int = num_employees
         self.num_firms: int = num_firms
+        self.num_banks: int = max(1, num_banks)
         self.max_steps: int = max_steps
         self.timestep: int = 0
 
         self.event_bus: EventBus = EventBus()
         self.rule_engine: RuleEngine = RuleEngine(event_bus=self.event_bus)
         self.agents: Dict[str, BaseAgent] = {}
+        self.banks: List[Bank] = []
 
         self.next_emp_id: int = self.num_employees
         self.next_firm_id: int = self.num_firms
@@ -39,12 +50,21 @@ class MacroEnvironment:
     def _create_world(self) -> None:
         self.agents.clear()
         self.gov = Government(agent_id="gov_1")
-        self.bank = Bank(agent_id="bank_1")
         self.eco = Economy(agent_id="eco_1")
         self.sup = Supervisor(agent_id="sup_1")
-        
+
+        # Hỗ trợ N ngân hàng đồng thời (mặc định 1). Toàn bộ ngân hàng chia sẻ
+        # cùng một policy RL "policy_bank" qua parameter sharing, giống cách
+        # firm_*/emp_* đã dùng (xem rllib_wrapper.policy_mapping_fn). self.bank
+        # được giữ làm alias trỏ tới ngân hàng đầu tiên cho các chỗ chỉ cần một
+        # đại diện hiển thị nhanh (vd. macro "headline" stats) -- mọi logic tài
+        # chính thực sự (tín dụng, tiền gửi) dùng self.banks / RuleEngine.
+        self.banks = [Bank(agent_id=f"bank_{i}") for i in range(self.num_banks)]
+        self.bank = self.banks[0]
+
         self.agents[self.gov.agent_id] = self.gov
-        self.agents[self.bank.agent_id] = self.bank
+        for b in self.banks:
+            self.agents[b.agent_id] = b
         self.agents[self.eco.agent_id] = self.eco
         self.agents[self.sup.agent_id] = self.sup
 
@@ -57,10 +77,7 @@ class MacroEnvironment:
             self.agents[e_id] = Employee(agent_id=e_id)
 
     def _sample_skill(self) -> float:
-        """
-        Phân phối kỹ năng liên tục Log-Normal (Mincer, 1974; Saez, 2001).
-        s_i = s_min + exp(mu + sigma * Z), triệt tiêu phân chia bậc rời rạc nhân tạo.
-        """
+        """Phân phối kỹ năng liên tục Log-Normal (Mincer, 1974; Saez, 2001)."""
         s_min = 0.50
         mu = 0.0
         sigma = 0.35
@@ -78,14 +95,20 @@ class MacroEnvironment:
         self.event_bus.clear()
         self._create_world()
 
-        # KHỞI TẠO THỂ CHẾ VÀ THUỘC TÍNH PHÒNG THỦ LỖI RUNTIME
+        # KHỞI TẠO THỂ CHẾ VĨ MÔ
         self.gov.initialize(initial_treasury=1000000.0, initial_worker_tax=0.15, initial_firm_tax=0.20)
         self.gov.current_gdp = 0.0
-        self.bank.initialize(initial_reserves=500000.0, initial_lending_rate=0.06, initial_deposit_rate=0.02)
+        # Tổng dự trữ hệ thống ngân hàng được CHIA ĐỀU cho N ngân hàng để tổng
+        # cung tín dụng ban đầu của toàn hệ thống không phụ thuộc vào num_banks
+        # -- giữ các lần chạy với số lượng ngân hàng khác nhau có thể so sánh
+        # được (comparable), tránh việc chỉ đơn thuần nhân đôi tổng tiền khi
+        # tăng num_banks.
+        per_bank_reserves = 500000.0 / len(self.banks)
+        for b in self.banks:
+            b.initialize(initial_reserves=per_bank_reserves, initial_lending_rate=0.06, initial_deposit_rate=0.02)
         self.eco.initialize(initial_living_cost=20.0, initial_housing_inventory=100, initial_house_price=1000.0)
         self.sup.initialize(initial_budget=50000.0, initial_audit_rate=0.05, initial_fine_multiplier=1.5)
         
-        # Đảm bảo các thuộc tính thống kê tồn tại ngay tại timestep 0
         self.sup.violations_detected = 0
         self.sup.fines_collected = 0.0
 
@@ -99,6 +122,7 @@ class MacroEnvironment:
                     initial_capital=init_cap
                 )
                 agent.age_months = 0
+                agent.status = LifeCycleStatus.ACTIVE
                 seed_cash = float(np.random.uniform(3000.0, 5000.0))
                 self.gov.treasury -= seed_cash
                 agent.cash = seed_cash
@@ -114,6 +138,7 @@ class MacroEnvironment:
                     initial_energy=float(np.random.uniform(0.8, 1.2)),
                     age=int(np.random.randint(18, 50))
                 )
+                agent.status = LifeCycleStatus.ACTIVE
 
         raw_state = self.get_raw_environment_state()
         initial_obs = {aid: a.observe(raw_state).vector for aid, a in self.agents.items()}
@@ -128,11 +153,13 @@ class MacroEnvironment:
             if isinstance(a, Firm):
                 a.age_months = getattr(a, "age_months", 0) + 1
 
+        # XỬ LÝ ĐẦY ĐỦ CẢ ACTIVE VÀ INITIALIZED
         validated_actions: Dict[str, Action] = {}
         for agent_id, raw_vals in action_dict.items():
             if agent_id in self.agents:
                 agent = self.agents[agent_id]
-                if agent.status == LifeCycleStatus.ACTIVE:
+                if agent.status in [LifeCycleStatus.ACTIVE, LifeCycleStatus.INITIALIZED]:
+                    agent.status = LifeCycleStatus.ACTIVE  # Auto-transition sang ACTIVE
                     act = Action(agent_id=agent_id, action_type="STEP_ACTION", values=np.asarray(raw_vals, dtype=np.float32))
                     val_res: ValidationResult = agent.validate_action(act)
                     validated_actions[agent_id] = Action(
@@ -154,9 +181,11 @@ class MacroEnvironment:
                 self.agents[agent_id].apply_result(trans_res)
                 if "status" in trans_res.state_delta:
                     self.agents[agent_id].status = trans_res.state_delta["status"]
+                # Áp dụng kẹp thể lực chuẩn xác
+                if "applied_energy" in trans_res.state_delta and isinstance(self.agents[agent_id], Employee):
+                    self.agents[agent_id].energy = trans_res.state_delta["applied_energy"]
                 rewards_all[agent_id] = self.agents[agent_id].calculate_reward(trans_res)
 
-        # CẬP NHẬT TRỰC TIẾP BIẾN THEO DÕI THANH TRA TRÊN SUPERVISOR
         sup_delta = transition_results.get(self.sup.agent_id)
         if sup_delta is not None:
             self.sup.fines_collected = sup_delta.state_delta.get("fines_collected", getattr(self.sup, "fines_collected", 0.0))
@@ -169,8 +198,15 @@ class MacroEnvironment:
         for d_id, emp in dead_emps:
             self.reported_dead_agents.add(d_id)
             self.agents.pop(d_id, None)
-            if emp.cash > 0:
-                self.gov.treasury += emp.cash
+            # Bảo toàn dòng tiền (Godley & Lavoie, 2007): TOÀN BỘ của cải còn lại
+            # của người đã mất (tiền mặt + tiền gửi ngân hàng) được thu hồi về
+            # Kho bạc -- kể cả khi cash âm (nợ cùng quẫn chưa trả), khoản nợ đó
+            # được Kho bạc gánh chịu như một khoản mất mát xã hội TƯỜNG MINH
+            # (cộng vào treasury dạng số âm), thay vì "bốc hơi" âm thầm khi agent
+            # bị xoá khỏi self.agents -- trước đây chỉ cash > 0 mới được thu hồi
+            # và bank_deposit không hề được xử lý, khiến cả hai chiều đều vi phạm
+            # bảo toàn hệ thống.
+            self.gov.treasury += emp.cash + getattr(emp, "bank_deposit", 0.0)
             if emp.employed_by and emp.employed_by in self.agents:
                 employer = self.agents[emp.employed_by]
                 if hasattr(employer, "employee_ids") and d_id in employer.employee_ids:
@@ -179,14 +215,16 @@ class MacroEnvironment:
         for b_id, firm in bankrupt_firms:
             self.reported_dead_agents.add(b_id)
             self.agents.pop(b_id, None)
-            if firm.cash > 0:
-                self.gov.treasury += firm.cash
+            # Xem chú thích bảo toàn dòng tiền ở nhánh dead_emps phía trên -- áp
+            # dụng cùng nguyên tắc: thu hồi toàn bộ cash còn lại (kể cả âm) về
+            # Kho bạc thay vì chỉ thu phần dương.
+            self.gov.treasury += firm.cash
             for a in self.agents.values():
                 if isinstance(a, Employee) and a.employed_by == b_id:
                     a.employed_by = None
                     a.wage = 0.0
 
-        # A. ĐIỀU TIẾT DÂN SỐ THEO MỨC SỐNG THỰC TẾ (DEMOGRAPHIC ENDOGENOUS CAPACITY)
+        # A. ĐIỀU TIẾT DÂN SỐ THEO SỨC TẢI KINH TẾ (Demographic Carrying Capacity)
         active_emps_list = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
         current_emp_count = len(active_emps_list)
         unemployed_count = sum(1 for e in active_emps_list if e.employed_by is None)
@@ -196,7 +234,6 @@ class MacroEnvironment:
         avg_wage = (sum(e.wage for e in employed_emps) / len(employed_emps)) if employed_emps else self.eco.base_living_cost
         living_standard_ratio = avg_wage / max(1.0, self.eco.base_living_cost)
 
-        # Rào chắn phần cứng an toàn tính toán
         HARD_MIN_EMP = 30
         HARD_MAX_EMP = 85
 
@@ -204,12 +241,11 @@ class MacroEnvironment:
         if current_emp_count < HARD_MIN_EMP:
             num_newborns = 2 if current_emp_count < 20 else 1
         elif current_emp_count < HARD_MAX_EMP:
-            p_birth = 0.10 + 0.15 * max(0.0, 1.0 - unemployment_rate) + 0.10 * max(0.0, living_standard_ratio - 1.0)
-            p_birth = float(np.clip(p_birth, 0.02, 0.40))
+            p_birth = 0.08 + 0.15 * max(0.0, 1.0 - unemployment_rate) + 0.10 * max(0.0, living_standard_ratio - 1.0)
+            p_birth = float(np.clip(p_birth, 0.02, 0.35))
             if np.random.rand() < p_birth and self.gov.treasury >= (3.0 * self.eco.base_living_cost):
                 num_newborns = 1
 
-        # Trợ cấp sinh tồn cơ sở Stone-Geary (Ackerman & Alstott, 1999)
         grant_per_newborn = float(3.0 * self.eco.base_living_cost)
         for _ in range(num_newborns):
             new_eid = f"emp_{self.next_emp_id}"
@@ -226,6 +262,7 @@ class MacroEnvironment:
                 initial_energy=1.0,
                 age=18
             )
+            new_emp.status = LifeCycleStatus.ACTIVE
             self.agents[new_eid] = new_emp
             self.event_bus.publish(Event(
                 event_type=EventType.AGENT_BORN,
@@ -235,7 +272,7 @@ class MacroEnvironment:
                 timestep=self.timestep
             ))
 
-        # B. GIA NHẬP THỊ TRƯỜNG THEO TOBIN'S Q & NGUỒN LAO ĐỘNG DƯ THỪA (Mortensen & Pissarides, 1994)
+        # B. GIA NHẬP THỊ TRƯỜNG THEO JORGENSON (1963) & QUY MÔ MES (Bain, 1956)
         active_firms_list = [a for a in self.agents.values() if isinstance(a, Firm) and a.status == LifeCycleStatus.ACTIVE]
         current_firm_count = len(active_firms_list)
         HARD_MAX_FIRMS = 7
@@ -244,12 +281,15 @@ class MacroEnvironment:
         total_market_profit = sum(getattr(f, "last_profit", 0.0) for f in active_firms_list)
         market_return_on_capital = (total_market_profit / max(100.0, total_market_capital)) if total_market_capital > 0 else 0.0
 
-        is_profitable_industry = (market_return_on_capital > self.bank.deposit_rate)
+        # Điều kiện gia nhập: Lợi nhuận vốn vượt chi phí cơ hội vốn (lãi suất tiền gửi bình
+        # quân toàn hệ thống ngân hàng) + có thặng dư lao động
+        avg_deposit_rate = float(np.mean([b.deposit_rate for b in self.banks]))
+        is_profitable_industry = (market_return_on_capital > avg_deposit_rate)
         has_excess_labor = (unemployment_rate > 0.08 and unemployed_count >= 2)
-        emergency_market_repair = (current_firm_count < 2 and unemployed_count >= 2)
+        emergency_repair = (current_firm_count < 2 and unemployed_count >= 2)
 
         should_incorporate = (
-            emergency_market_repair or 
+            emergency_repair or 
             (current_firm_count < HARD_MAX_FIRMS and is_profitable_industry and has_excess_labor and np.random.rand() < 0.15)
         )
 
@@ -259,7 +299,7 @@ class MacroEnvironment:
 
             # Vốn mồi quy mô tối thiểu MES (Bain, 1956)
             current_p = max(0.5, self.eco.base_living_cost)
-            grant_firm = float(np.clip(100.0 * current_p, 1500.0, 5000.0))
+            grant_firm = float(np.clip(80.0 * current_p, 1500.0, 4500.0))
             if self.gov.treasury >= (grant_firm * 2.0):
                 self.gov.treasury -= grant_firm
             else:
@@ -275,6 +315,7 @@ class MacroEnvironment:
             )
             new_firm.age_months = 0
             new_firm.cash = grant_firm
+            new_firm.status = LifeCycleStatus.ACTIVE
             self.agents[new_fid] = new_firm
             self.event_bus.publish(Event(
                 event_type=EventType.HIRE,
@@ -300,10 +341,7 @@ class MacroEnvironment:
         return observations, rewards, terminateds, truncateds, infos
 
     def get_raw_environment_state(self) -> Dict[str, Any]:
-        """
-        Chuẩn hóa tensor vĩ mô theo Fisher (1911) và Allingham & Sandmo (1972).
-        Đảm bảo truy cập an toàn, loại bỏ triệt để các lỗi AttributeError.
-        """
+        """Chuẩn hóa tensor vĩ mô theo Fisher (1911) và Allingham & Sandmo (1972)."""
         active_employees = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
         unemployed_count = sum(1 for e in active_employees if e.employed_by is None)
         unemployment_rate = (unemployed_count / len(active_employees)) if active_employees else 0.0
@@ -315,10 +353,19 @@ class MacroEnvironment:
         total_credit_demand = sum(f.debt for f in active_firms)
 
         total_emp_cash = sum(a.cash for a in active_employees)
+        total_emp_deposits = sum(getattr(a, "bank_deposit", 0.0) for a in active_employees)
         total_firm_cash = sum(a.cash for a in active_firms)
-        m2_supply = max(1.0, self.gov.treasury + self.bank.reserves + total_emp_cash + total_firm_cash)
+        # M2 chuẩn = tiền mặt lưu hành + tiền gửi ngân hàng do khu vực TƯ (công
+        # chúng) nắm giữ (Mishkin, F., 2019, "The Economics of Money, Banking
+        # and Financial Markets", 12th ed., Pearson, Ch.3). Dự trữ ngân hàng
+        # (bank.reserves) KHÔNG thuộc M2 theo định nghĩa chuẩn vì đó là tài sản
+        # nội bộ của hệ thống ngân hàng, không phải tiền do công chúng nắm giữ
+        # -- gộp cả hai sẽ tính trùng phần "hậu thuẫn" cho tiền gửi. Kho bạc
+        # (Treasury) được cộng vào theo quy ước riêng của mô hình này để phản
+        # ánh tổng sức mua danh nghĩa còn lưu hành trong nền kinh tế mô phỏng.
+        m2_supply = max(1.0, self.gov.treasury + total_emp_cash + total_emp_deposits + total_firm_cash)
 
-        # Vận tốc lưu thông tiền tệ: V = GDP / M2 (Fisher, 1911)
+        # Vận tốc lưu thông tiền tệ Fisher: V = GDP / M2 (Fisher, 1911)
         velocity_of_money = float(self.gov.current_gdp / m2_supply)
 
         # Thất thu thuế ước tính từ số tiền phạt và số vụ phát hiện (Allingham & Sandmo, 1972)
@@ -327,6 +374,20 @@ class MacroEnvironment:
         violations = getattr(self.sup, 'violations_detected', 0)
         real_evasion_estimate = float((fines / multiplier) + (violations * self.eco.base_living_cost * 0.5))
 
+        # Lãi suất vĩ mô quan sát được (dùng cho Ω_i của Employee/Firm) là bình
+        # quân gia quyền theo dự trữ (reserve-weighted average) trên toàn bộ hệ
+        # thống ngân hàng -- một chỉ số "lãi suất thị trường" tổng hợp, tương tự
+        # khái niệm prime rate thị trường; giao dịch tín dụng THỰC TẾ vẫn dùng
+        # đúng lending_rate/deposit_rate của ngân hàng đối tác cụ thể (xem
+        # rule_engine.py Section 5, 8B -- quan hệ tín dụng Petersen & Rajan, 1994).
+        total_reserves = sum(b.reserves for b in self.banks)
+        if total_reserves > 0.0:
+            avg_lending_rate = sum(b.lending_rate * b.reserves for b in self.banks) / total_reserves
+            avg_deposit_rate_w = sum(b.deposit_rate * b.reserves for b in self.banks) / total_reserves
+        else:
+            avg_lending_rate = float(np.mean([b.lending_rate for b in self.banks]))
+            avg_deposit_rate_w = float(np.mean([b.deposit_rate for b in self.banks]))
+
         return {
             "timestep": self.timestep,
             "macro_indicators": {
@@ -334,8 +395,8 @@ class MacroEnvironment:
                 "base_living_cost": self.eco.base_living_cost,
                 "worker_tax_rate": self.gov.tax_rate_worker,
                 "firm_tax_rate": self.gov.tax_rate_firm,
-                "base_interest_rate": self.bank.deposit_rate,
-                "bank_lending_rate": self.bank.lending_rate,
+                "base_interest_rate": avg_deposit_rate_w,
+                "bank_lending_rate": avg_lending_rate,
                 "unemployment_rate": unemployment_rate,
                 "average_wage": avg_wage,
                 "market_demand_factor": float(np.clip(velocity_of_money * 10.0, 0.1, 5.0)),
@@ -348,8 +409,10 @@ class MacroEnvironment:
 
     def export_full_world_state(self) -> Dict[str, Any]:
         total_emp_cash = sum(a.cash for a in self.agents.values() if isinstance(a, Employee))
+        total_emp_deposits = sum(getattr(a, "bank_deposit", 0.0) for a in self.agents.values() if isinstance(a, Employee))
         total_firm_cash = sum(a.cash for a in self.agents.values() if isinstance(a, Firm))
-        m2_supply = self.gov.treasury + self.bank.reserves + total_emp_cash + total_firm_cash
+        # Xem chú thích chi tiết định nghĩa M2 tại get_raw_environment_state().
+        m2_supply = self.gov.treasury + total_emp_cash + total_emp_deposits + total_firm_cash
 
         return {
             "timestep": self.timestep,
@@ -358,8 +421,9 @@ class MacroEnvironment:
                 "gdp": self.gov.current_gdp,
                 "gini": self.gov.current_gini,
                 "treasury": self.gov.treasury,
-                "bank_reserves": self.bank.reserves,
-                "npl": self.bank.non_performing_loans,
+                "bank_reserves": sum(b.reserves for b in self.banks),
+                "bank_deposits": sum(b.total_deposits for b in self.banks),
+                "npl": sum(b.non_performing_loans for b in self.banks),
                 "living_cost": self.eco.base_living_cost,
                 "housing_price": self.eco.housing_price,
                 "inflation": self.eco.inflation_rate,

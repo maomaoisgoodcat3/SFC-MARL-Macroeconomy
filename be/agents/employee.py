@@ -23,6 +23,11 @@ class Employee(BaseAgent):
         
         # Chi so tai chinh va the ly
         self.cash: float = 0.0
+        self.bank_deposit: float = 0.0  # So du tien gui ngan hang (Section 8B, rule_engine.py)
+        # Quan hệ tiền gửi với MỘT ngân hàng cụ thể khi hệ thống có nhiều ngân
+        # hàng (cùng logic relationship banking như Firm.creditor_bank_id, xem
+        # Petersen & Rajan, 1994).
+        self.depository_bank_id: Optional[str] = None
         self.energy: float = 1.0
         self.employed_by: Optional[str] = None
         self.wage: float = 0.0
@@ -45,6 +50,8 @@ class Employee(BaseAgent):
         self.risk_aversion = float(risk_aversion) if risk_aversion != 1.0 else 0.99
         self.tax_morale = float(tax_morale)
         self.cash = float(initial_cash)
+        self.bank_deposit = 0.0
+        self.depository_bank_id = None
         self.energy = float(initial_energy)
         self.age = int(age)
         self.employed_by = None
@@ -62,6 +69,9 @@ class Employee(BaseAgent):
         interest_rate = float(macro.get("base_interest_rate", 0.05))
         unemployment_rate = float(macro.get("unemployment_rate", 0.0))
         
+        # Khong gian quan sat 13 chieu: [0-4] vi mo, [5] tien mat, [6] tien gui
+        # ngan hang (Section 8B, rule_engine.py), [7] the luc, [8] bac ky nang,
+        # [9] luong, [10] dang co viec lam, [11] tuoi, [12] no.
         obs_array = np.array([
             inflation,
             living_cost,
@@ -69,6 +79,7 @@ class Employee(BaseAgent):
             interest_rate,
             unemployment_rate,
             self.cash,
+            self.bank_deposit,
             self.energy,
             self.skill_level,
             self.wage,
@@ -119,6 +130,9 @@ class Employee(BaseAgent):
     def apply_result(self, transition_result: TransitionResult) -> None:
         delta = transition_result.state_delta
         self.cash += float(delta.get("cash_delta", 0.0))
+        self.bank_deposit = float(max(0.0, self.bank_deposit + delta.get("deposit_delta", 0.0)))
+        if "depository_bank_id" in delta:
+            self.depository_bank_id = delta["depository_bank_id"]
         self.energy = float(np.clip(self.energy + delta.get("energy_delta", 0.0), 0.0, 2.0))
         self.debt = float(max(0.0, self.debt + delta.get("debt_delta", 0.0)))
         
@@ -151,17 +165,19 @@ class Employee(BaseAgent):
         if self.status in [LifeCycleStatus.TERMINATED, LifeCycleStatus.DECEASED]:
             return -100.0
 
+        # Utility tiêu dùng CRRA: scale bằng log để tránh số cực lớn
+        # ln(consumption) đơn giản hơn và stable hơn CRRA khi consumption dao động mạnh
         consumption = max(0.01, self.last_consumption)
-        u_consumption = (consumption ** (1.0 - self.risk_aversion) - 1.0) / (1.0 - self.risk_aversion)
+        u_consumption = float(np.log(consumption)) * 2.0
 
-        # Chi phi mat thoa dung lao dong
-        disutility_labor = (self.last_work_effort ** 2.5) * 0.5
+        # Chi phí mất thỏa dụng lao động
+        disutility_labor = (self.last_work_effort ** 2.0) * 1.0
         moral_cost = 1.5 * self.tax_morale * ((1.0 - self.last_declare_ratio) ** 2)
 
-        # PHAT THAT NGHIEP (Khu benh y lai vao tro cap)
+        # Phạt thất nghiệp: tăng dần nhưng cap ở 8.0 để không dominate toàn bộ signal
         unemployment_penalty = 0.0
         if self.employed_by is None:
-            unemployment_penalty = 2.0 + (1.5 * min(self.unemployed_streak, 10))
+            unemployment_penalty = min(2.0 + (0.5 * self.unemployed_streak), 8.0)
 
         total_utility = u_consumption - disutility_labor - moral_cost - unemployment_penalty
         return float(np.clip(total_utility, -50.0, 50.0))
@@ -172,6 +188,7 @@ class Employee(BaseAgent):
             "type": self.agent_type.value,
             "status": self.status.name,
             "cash": self.cash,
+            "bank_deposit": round(self.bank_deposit, 1),
             "energy": self.energy,
             "skill_level": round(self.skill_level, 2),
             "employed_by": self.employed_by,
@@ -184,6 +201,8 @@ class Employee(BaseAgent):
     def reset(self) -> None:
         super().reset()
         self.cash = 0.0
+        self.bank_deposit = 0.0
+        self.depository_bank_id = None
         self.energy = 1.0
         self.employed_by = None
         self.wage = 0.0

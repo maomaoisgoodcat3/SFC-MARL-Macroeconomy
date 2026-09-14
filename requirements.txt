@@ -16,3 +16,6 @@ websockets>=12.0
 
 # System Profiling & Hardware Monitoring
 gputil>=1.4.0
+
+# Testing (SFC accounting audit suite, be/tests/)
+pytest>=7.4.0

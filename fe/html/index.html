@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Institutional AI Economist | Research Sandbox</title>
-    <link rel="stylesheet" href="/css/dashboard.css?v=3.5">
+    <link rel="stylesheet" href="/css/dashboard.css?v=4.0">
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/force-graph"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -16,16 +16,17 @@
         <!-- TOP CONTROL BAR -->
         <header class="top-nav">
             <div class="brand">
+                <span class="brand-mark">Æ</span>
                 <span class="system-title">INSTITUTIONAL AI ECONOMIST</span>
-                <span class="version-tag">SANDBOX v1.5</span>
+                <span class="version-tag">SANDBOX v4.0</span>
             </div>
-            
+
             <div class="simulation-controls">
                 <button id="btn-play" class="btn btn-primary">RUN</button>
                 <button id="btn-pause" class="btn btn-secondary">PAUSE</button>
                 <button id="btn-step" class="btn btn-secondary">STEP</button>
                 <button id="btn-reset" class="btn btn-danger">RESET</button>
-                
+
                 <div class="control-group">
                     <label for="speed-slider">Speed</label>
                     <input type="range" id="speed-slider" min="20" max="1000" value="200" step="20">
@@ -40,11 +41,19 @@
                 </div>
             </div>
 
-            <div class="status-indicator">
-                <span class="status-dot" id="connection-dot"></span>
-                <span id="connection-status">DISCONNECTED</span>
+            <div class="top-nav-right">
+                <div class="api-key-group" id="api-key-group" title="X-API-Key required by the control server (printed in the server console log on startup)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                    <input type="password" id="api-key-input" placeholder="API key">
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot" id="connection-dot"></span>
+                    <span id="connection-status">DISCONNECTED</span>
+                </div>
             </div>
         </header>
+
+        <div class="toast-banner" id="toast-banner"><b>Auth error —</b> <span id="toast-message"></span></div>
 
         <!-- MAIN VIEWPORT -->
         <main class="main-content">
@@ -70,10 +79,10 @@
                 <div class="viewport-card metrics-card">
                     <div class="card-header">
                         <h2>Macroeconomic Telemetry</h2>
-                        <span style="font-size:11px; font-weight:700; color:#58a6ff;">Month <b id="metric-month">0</b></span>
+                        <span style="font-size:11px; font-weight:700; color:var(--accent-strong);">Month <b id="metric-month">0</b></span>
                     </div>
                     <div class="metrics-grid">
-                        <div class="metric-box"><span class="m-label">GDP</span><span class="m-value" id="val-gdp">$0</span></div>
+                        <div class="metric-box"><span class="m-label">GDP</span><span class="m-value accent" id="val-gdp">$0</span></div>
                         <div class="metric-box"><span class="m-label">Gini Index</span><span class="m-value" id="val-gini">0.000</span></div>
                         <div class="metric-box"><span class="m-label">Inflation</span><span class="m-value" id="val-inflation">0.00%</span></div>
                         <div class="metric-box"><span class="m-label">Living Cost</span><span class="m-value" id="val-cost">$0.0</span></div>
@@ -81,14 +90,46 @@
                         <div class="metric-box"><span class="m-label">M2 Money</span><span class="m-value" id="val-m2">$0</span></div>
                         <div class="metric-box"><span class="m-label">Gov Treasury</span><span class="m-value" id="val-treasury">$0</span></div>
                         <div class="metric-box"><span class="m-label">Bank Reserves</span><span class="m-value" id="val-bank">$0</span></div>
-                        <div class="metric-box"><span class="m-label">Bank NPL</span><span class="m-value" id="val-npl" style="color:#f85149;">$0</span></div>
+                        <div class="metric-box"><span class="m-label">Bank NPL</span><span class="m-value" id="val-npl" style="color:var(--danger);">$0</span></div>
                     </div>
                 </div>
 
-                <!-- 2. POLICY INTERVENTION SANDBOX -->
+                <!-- 2. SIMULATION SETUP -->
+                <div class="viewport-card setup-card">
+                    <div class="card-header">
+                        <h2>Simulation Setup</h2>
+                    </div>
+                    <div class="setup-body">
+                        <div class="setup-row">
+                            <div class="setup-field">
+                                <label for="setup-num-workers">Workers</label>
+                                <input type="number" id="setup-num-workers" min="5" max="300" step="1" value="50">
+                            </div>
+                            <div class="setup-field">
+                                <label for="setup-num-firms">Firms</label>
+                                <input type="number" id="setup-num-firms" min="1" max="30" step="1" value="5">
+                            </div>
+                        </div>
+
+                        <details class="setup-advanced">
+                            <summary>Advanced (multi-bank credit market)</summary>
+                            <div class="setup-row">
+                                <div class="setup-field">
+                                    <label for="setup-num-banks">Banks</label>
+                                    <input type="number" id="setup-num-banks" min="1" max="5" step="1" value="1">
+                                </div>
+                            </div>
+                        </details>
+
+                        <button id="btn-apply-setup" class="btn btn-accent btn-block">Apply &amp; New Simulation</button>
+                        <span class="setup-hint">Restarts the simulation from month 0 with the population sizes above. Bank count defaults to 1; each additional bank competes for credit and deposits under relationship banking (Petersen &amp; Rajan, 1994).</span>
+                    </div>
+                </div>
+
+                <!-- 3. POLICY INTERVENTION SANDBOX -->
                 <div class="viewport-card policy-card">
                     <div class="card-header">
-                        <h2>Policy Intervention Console (Stress Sandbox)</h2>
+                        <h2>Policy Sandbox (Stress Test)</h2>
                         <button id="btn-apply-policy" class="btn btn-warning btn-xs">Apply Shock</button>
                     </div>
                     <div class="policy-controls-grid">
@@ -123,7 +164,7 @@
                     </div>
                 </div>
 
-                <!-- 3. HISTORICAL CHART -->
+                <!-- 4. HISTORICAL CHART -->
                 <div class="viewport-card chart-card">
                     <div class="card-header">
                         <h2>Historical Macro Trends</h2>
@@ -138,21 +179,25 @@
                     </div>
                 </div>
 
-                <!-- 4. DUAL-STREAM LEDGER (2 TAB RIENG BIET) -->
+                <!-- 5. DUAL-STREAM LEDGER (2 TAB RIENG BIET) -->
                 <div class="viewport-card logs-card">
                     <div class="card-header">
                         <div class="log-tab-buttons">
                             <button id="tab-bulletin" class="tab-btn active">System Bulletins</button>
                             <button id="tab-ledger" class="tab-btn">Transaction Feed</button>
                         </div>
-                        <span id="log-count" style="font-size:10px; color:#8b949e;">0 events</span>
+                        <span id="log-count" style="font-size:10px; color:var(--text-muted);">0 events</span>
                     </div>
-                    
+
                     <!-- TAB 1: SU KIEN TRONG YEU (GIAN LAN, PHAT, DIED, BANKRUPT, SHOCK) -->
-                    <div class="log-stream active" id="bulletin-stream-container"></div>
-                    
+                    <div class="log-stream active" id="bulletin-stream-container">
+                        <div class="empty-log-hint" data-placeholder="1">No events yet — press RUN to start the simulation.</div>
+                    </div>
+
                     <!-- TAB 2: GIAO DICH THUONG NHAT (LUONG, MUA HANG, TRA NO) -->
-                    <div class="log-stream" id="ledger-stream-container" style="display:none;"></div>
+                    <div class="log-stream" id="ledger-stream-container" style="display:none;">
+                        <div class="empty-log-hint" data-placeholder="1">No transactions yet.</div>
+                    </div>
                 </div>
             </aside>
         </main>
@@ -182,7 +227,7 @@
                     <div class="ins-metric-col" id="col-energy">
                         <span class="ins-m-title" id="lbl-metric-2">PHYSICAL ENERGY</span>
                         <div id="ins-energy-wrap" class="energy-bar-wrap">
-                            <div id="ins-energy-bar" class="energy-bar-fill" style="width:100%; background:#3fb950;"></div>
+                            <div id="ins-energy-bar" class="energy-bar-fill" style="width:100%; background:var(--success);"></div>
                         </div>
                         <span id="ins-val-2" class="ins-m-val" style="display:none;"></span>
                     </div>
@@ -203,6 +248,6 @@
         </footer>
     </div>
 
-    <script src="/js/dashboard.js?v=3.5"></script>
+    <script src="/js/dashboard.js?v=4.0"></script>
 </body>
 </html>

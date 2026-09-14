@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument("--mode", type=str, choices=["train", "simulate"], default="train", help="Run mode")
     parser.add_argument("--num-employees", type=int, default=50, help="Total employee population")
     parser.add_argument("--num-firms", type=int, default=5, help="Total firm population")
+    parser.add_argument("--num-banks", type=int, default=1, help="Total bank population (relationship-banking credit market)")
     parser.add_argument("--max-steps", type=int, default=240, help="Maximum timesteps (months) per episode")
     parser.add_argument("--train-iters", type=int, default=500, help="Number of training iterations")
     parser.add_argument("--train-batch-size", type=int, default=4000, help="Training batch size")
@@ -82,7 +83,7 @@ def find_latest_checkpoint(checkpoint_base: str) -> str:
 
 def run_training(args):
     logger.info("[SYSTEM] Initializing Institutional AI Economist Training Engine...")
-    logger.info(f"[CONFIG] Employees: {args.num_employees} | Firms: {args.num_firms} | Max Steps: {args.max_steps}")
+    logger.info(f"[CONFIG] Employees: {args.num_employees} | Firms: {args.num_firms} | Banks: {args.num_banks} | Max Steps: {args.max_steps}")
     logger.info(f"[CONFIG] Batch Size: {args.train_batch_size} | Total Iterations: {args.train_iters} | Checkpoint Freq: {args.checkpoint_freq}")
 
     ray.init(ignore_reinit_error=True)
@@ -99,6 +100,7 @@ def run_training(args):
     env_config = {
         "num_employees": args.num_employees,
         "num_firms": args.num_firms,
+        "num_banks": args.num_banks,
         "max_steps": args.max_steps
     }
 
@@ -139,14 +141,28 @@ def run_training(args):
     if not target_checkpoint:
         target_checkpoint = find_latest_checkpoint(args.checkpoint_dir)
 
+    current_iter = 0
     if target_checkpoint and os.path.exists(target_checkpoint):
-        logger.info(f"[SYSTEM] Restoring policy weights from: {target_checkpoint}")
-        algo.restore(target_checkpoint)
-        current_iter = algo.iteration
-        logger.info(f"[SYSTEM] Checkpoint successfully loaded. Resuming training from iteration {current_iter}.")
+        try:
+            logger.info(f"[SYSTEM] Restoring policy weights from: {target_checkpoint}")
+            algo.restore(target_checkpoint)
+            current_iter = algo.iteration
+            logger.info(f"[SYSTEM] Checkpoint successfully loaded. Resuming training from iteration {current_iter}.")
+        except Exception as exc:
+            # Bat buoc bat loi o day: checkpoint cu duoc train truoc khi khong
+            # gian quan sat cua Employee tang tu 12 len 13 chieu (them
+            # bank_deposit, xem be/rllib_wrapper.py) se luon lech shape va
+            # khong the restore duoc nua. Khong bat exception se lam toan bo
+            # tien trinh train sup do ngay khi khoi dong neu thu muc checkpoint
+            # cu (be/checkpoint/training/) van con ton tai.
+            logger.warning(
+                f"[SYSTEM] Failed to restore checkpoint {target_checkpoint} (likely an "
+                f"incompatible observation/action space from a previous model version): "
+                f"{str(exc)}. Starting fresh from iteration 0 instead."
+            )
+            current_iter = 0
     else:
         logger.info("[SYSTEM] No existing checkpoint identified. Training starting from iteration 0.")
-        current_iter = 0
 
     training_cp_dir = os.path.join(args.checkpoint_dir, "training")
     os.makedirs(training_cp_dir, exist_ok=True)
@@ -205,6 +221,7 @@ def run_simulation(args):
     env = MacroEnvironment(
         num_employees=args.num_employees,
         num_firms=args.num_firms,
+        num_banks=args.num_banks,
         max_steps=args.max_steps
     )
     inst_logger = InstitutionalLogger(flush_interval=50)
@@ -229,7 +246,7 @@ def run_simulation(args):
         inst_logger.log_macro_step(
             timestep=step,
             gov=env.gov,
-            bank=env.bank,
+            banks=env.banks,
             eco=env.eco,
             sup=env.sup,
             active_workers=active_w,

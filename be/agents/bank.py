@@ -143,14 +143,18 @@ class Bank(BaseAgent):
         self.total_loans = float(max(0.0, self.total_loans + delta.get("loans_delta", 0.0)))
         self.reserves += float(delta.get("reserves_delta", 0.0))
         
-        # Xu ly no xau tu cac Doanh nghiep pha san trong ky
+        # Xử lý nợ xấu từ các Doanh nghiệp phá sản trong kỳ. "new_defaults" ở đây
+        # là phần KHÔNG THU HỒI ĐƯỢC (bad_debt) sau khi RuleEngine đã trừ đi phần
+        # thu hồi bằng tiền mặt + thanh lý tài sản thế chấp (Merton, 1974) -- việc
+        # xoá khoản vay đã tất toán khỏi tổng dư nợ (total_loans) được xử lý qua
+        # kênh loans_delta chung ở trên (bao gồm cả phần thu hồi được lẫn phần mất
+        # trắng), nên KHÔNG được trừ trùng total_loans ở đây lần nữa.
         new_defaults = float(delta.get("new_defaults", 0.0))
-        self.non_performing_loans += new_defaults
+        self.non_performing_loans = float(max(0.0, self.non_performing_loans + new_defaults))
         self.last_default_loss = new_defaults
-        
-        # Xoa bo no xau khoi tong du no (Write-off)
+
         if new_defaults > 0.0:
-            self.total_loans = max(0.0, self.total_loans - new_defaults)
+            self.reserves -= new_defaults  # ngân hàng chịu lỗ tín dụng thực sự
 
         self.last_interest_income = float(delta.get("interest_income", 0.0))
         self.last_interest_expense = float(delta.get("interest_expense", 0.0))

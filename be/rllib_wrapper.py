@@ -12,7 +12,7 @@ from be.agents.firm import Firm
 # ==============================================================================
 # KHONG GIAN QUAN SAT (OBSERVATION SPACES)
 # ==============================================================================
-EMPLOYEE_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32)
+EMPLOYEE_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32)  # +1: bank_deposit (Section 8B)
 FIRM_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float32)
 GOVERNMENT_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
 BANK_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
@@ -60,7 +60,7 @@ def policy_mapping_fn(agent_id: str, episode=None, worker=None, **kwargs) -> str
         return "policy_firm"
     if agent_id == "gov_1":
         return "policy_government"
-    if agent_id == "bank_1":
+    if agent_id.startswith("bank_"):
         return "policy_bank"
     if agent_id == "sup_1":
         return "policy_supervisor"
@@ -78,15 +78,18 @@ class RLlibMacroEnv(MultiAgentEnv):
         cfg = config or {}
         self.num_employees = cfg.get("num_employees", 50)
         self.num_firms = cfg.get("num_firms", 5)
+        self.num_banks = cfg.get("num_banks", 1)
         self.max_steps = cfg.get("max_steps", 240)
 
         self.env = MacroEnvironment(
             num_employees=self.num_employees,
             num_firms=self.num_firms,
+            num_banks=self.num_banks,
             max_steps=self.max_steps
         )
 
-        all_ids = ["gov_1", "bank_1", "eco_1", "sup_1"]
+        all_ids = ["gov_1", "eco_1", "sup_1"]
+        all_ids.extend([f"bank_{i}" for i in range(self.num_banks)])
         all_ids.extend([f"firm_{i}" for i in range(self.num_firms)])
         all_ids.extend([f"emp_{j}" for j in range(self.num_employees)])
 
@@ -154,8 +157,8 @@ class InstitutionalMetricsCallback(DefaultCallbacks):
         episode.custom_metrics["gdp"] = float(sub_env.gov.current_gdp)
         episode.custom_metrics["gini"] = float(sub_env.gov.current_gini)
         episode.custom_metrics["treasury"] = float(sub_env.gov.treasury)
-        episode.custom_metrics["bank_reserves"] = float(sub_env.bank.reserves)
-        episode.custom_metrics["bank_npl"] = float(sub_env.bank.non_performing_loans)
+        episode.custom_metrics["bank_reserves"] = float(sum(b.reserves for b in sub_env.banks))
+        episode.custom_metrics["bank_npl"] = float(sum(b.non_performing_loans for b in sub_env.banks))
         episode.custom_metrics["living_cost"] = float(sub_env.eco.base_living_cost)
         episode.custom_metrics["housing_price"] = float(sub_env.eco.housing_price)
 

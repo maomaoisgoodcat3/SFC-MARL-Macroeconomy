@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Sequence
 from be.core.enums import LifeCycleStatus
 from be.core.event import Event
 from be.agents.base_agent import BaseAgent
@@ -38,15 +38,17 @@ class InstitutionalLogger:
         self.micro_buffer: List[Dict[str, Any]] = []
         self.ui_event_queue: List[Dict[str, Any]] = []
 
-    def log_macro_step(self, 
-                       timestep: int, 
-                       gov: Government, 
-                       bank: Bank, 
-                       eco: Economy, 
-                       sup: Supervisor, 
-                       active_workers: int, 
+    def log_macro_step(self,
+                       timestep: int,
+                       gov: Government,
+                       banks: Sequence[Bank],
+                       eco: Economy,
+                       sup: Supervisor,
+                       active_workers: int,
                        active_firms: int) -> None:
-        """Ghi nhan trang thai Vi mo toan xa hoi theo tung thang."""
+        """Ghi nhan trang thai Vi mo toan xa hoi theo tung thang. `banks` la danh
+        sach toan bo ngan hang dang hoat dong (ho tro N ngan hang dong thoi);
+        cac chi so tong hop duoc cong don qua toan bo he thong ngan hang."""
         record = {
             "month": timestep,
             "gdp": float(gov.current_gdp),
@@ -60,9 +62,11 @@ class InstitutionalLogger:
             "living_cost": float(eco.base_living_cost),
             "government_cash": float(gov.treasury),
             "public_debt": float(gov.public_debt),
-            "bank_reserves": float(bank.reserves),
-            "bank_total_loans": float(bank.total_loans),
-            "bank_npl": float(bank.non_performing_loans),
+            "bank_count": len(banks),
+            "bank_reserves": float(sum(b.reserves for b in banks)),
+            "bank_total_loans": float(sum(b.total_loans for b in banks)),
+            "bank_total_deposits": float(sum(b.total_deposits for b in banks)),
+            "bank_npl": float(sum(b.non_performing_loans for b in banks)),
             "audit_violations": int(sup.violations_detected)
         }
         self.macro_buffer.append(record)
@@ -81,10 +85,16 @@ class InstitutionalLogger:
                     "living_cost_paid": float(agent.last_consumption),
                     "tax_declare_ratio": float(agent.last_declare_ratio),
                     "savings_cash": float(agent.cash),
-                    "net_worth": float(agent.cash - agent.debt),
+                    "bank_deposit": float(getattr(agent, "bank_deposit", 0.0)),
+                    # net_worth PHẢI cộng cả bank_deposit -- nếu không, của cải hộ
+                    # gia đình bị đánh giá thấp giả tạo một khi họ chuyển phần lớn
+                    # tiền mặt sang tiền gửi ngân hàng (Section 8B, rule_engine.py),
+                    # cùng lỗi đã được vá cho phép tính Gini.
+                    "net_worth": float(agent.cash + getattr(agent, "bank_deposit", 0.0) - agent.debt),
                     "energy": float(agent.energy),
                     "skill_level": float(agent.skill_level),
                     "employed_by": str(agent.employed_by) if agent.employed_by else "None",
+                    "depository_bank_id": str(getattr(agent, "depository_bank_id", None)),
                     "debt": float(agent.debt),
                     "age": int(agent.age)
                 }
@@ -102,6 +112,7 @@ class InstitutionalLogger:
                     "capital_stock": float(agent.capital_stock),
                     "cash": float(agent.cash),
                     "debt": float(agent.debt),
+                    "creditor_bank_id": str(getattr(agent, "creditor_bank_id", None)),
                     "headcount": int(len(agent.employee_ids))
                 }
                 self.micro_buffer.append(record)

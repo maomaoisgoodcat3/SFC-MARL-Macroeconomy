@@ -2,11 +2,12 @@ import os
 import asyncio
 import json
 import logging
+import secrets
 from typing import Dict, Any, List, Optional
 import numpy as np
 import ray
 from ray.rllib.algorithms.ppo import PPOConfig
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -31,12 +32,52 @@ logger = logging.getLogger("InstitutionalEconomist.Server")
 
 app = FastAPI(title="Institutional AI Economist Control Server")
 
+# XÁC THỰC API TỐI GIẢN (Giai đoạn 3 -- vá lỗ hổng "ai cũng điều khiển được
+# simulation"): sinh một token phiên ngẫu nhiên nếu người dùng không tự đặt
+# biến môi trường AI_ECONOMIST_API_TOKEN. Mọi request tới /api/* và kết nối
+# /ws/stream đều phải mang đúng token này. Đây là mô hình xác thực phù hợp
+# cho một sandbox nghiên cứu chạy local/LAN một người dùng -- không cần OAuth
+# đầy đủ, nhưng đủ để chặn truy cập trái phép qua mạng.
+API_TOKEN = os.environ.get("AI_ECONOMIST_API_TOKEN") or secrets.token_urlsafe(24)
+if not os.environ.get("AI_ECONOMIST_API_TOKEN"):
+    # Dong log nay CO CHU Y khong dung dau tieng Viet: console mac dinh cua
+    # Windows (khong phai UTF-8) co the hien thi sai dau, khien dong quan
+    # trong nhat (chua API token) bi kho doc/kho copy. Dong khung ro rang de
+    # nguoi dung de nhan ra va copy chinh xac ma khong bi lan voi log khac.
+    logger.warning(
+        "\n"
+        + "=" * 78 + "\n"
+        + "[SECURITY] No AI_ECONOMIST_API_TOKEN set. Generated a random session token.\n"
+        + "Paste this EXACT string into the 'API key' field on the dashboard (top-right):\n"
+        + "\n"
+        + f"    {API_TOKEN}\n"
+        + "\n"
+        + "(Or set it yourself before starting the server: "
+        + "set AI_ECONOMIST_API_TOKEN=<your-token>  [cmd]  /  "
+        + "$env:AI_ECONOMIST_API_TOKEN='<your-token>'  [PowerShell])\n"
+        + "=" * 78
+    )
+
+def require_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> None:
+    if x_api_key is None or not secrets.compare_digest(x_api_key, API_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+
+# CORS: KHÔNG dùng wildcard "*" kết hợp allow_credentials=True (kết hợp này bị
+# chính đặc tả CORS/trình duyệt coi là cấu hình không an toàn). Chỉ cho phép
+# các origin tường minh -- mặc định là host chạy chính server này; có thể mở
+# rộng qua biến môi trường AI_ECONOMIST_CORS_ORIGINS (danh sách phân tách bởi
+# dấu phẩy) khi cần phục vụ frontend từ một origin khác.
+_default_origins = "http://localhost:8000,http://127.0.0.1:8000"
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("AI_ECONOMIST_CORS_ORIGINS", _default_origins).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 os.makedirs("fe/css", exist_ok=True)
@@ -51,7 +92,7 @@ if os.path.exists("fe/assets"):
 class SimulationController:
     """Dieu phoi mo phong va suy luan trong so PPO Checkpoint."""
     def __init__(self):
-        self.env: MacroEnvironment = MacroEnvironment(num_employees=50, num_firms=5, max_steps=480)
+        self.env: MacroEnvironment = MacroEnvironment(num_employees=50, num_firms=5, num_banks=1, max_steps=480)
         self.logger: InstitutionalLogger = InstitutionalLogger(flush_interval=50)
         self.is_running: bool = False
         self.speed_delay: float = 0.2
@@ -102,12 +143,25 @@ class SimulationController:
         cp_dir = "be/checkpoint/training"
         if not os.path.exists(cp_dir):
             return None
-        subdirs = [d for d in os.listdir(cp_dir) if os.path.isdir(os.path.join(cp_dir, d))]
+        subdirs = [
+            d for d in os.listdir(cp_dir)
+            if os.path.isdir(os.path.join(cp_dir, d)) and d.startswith("iter_")
+        ]
         if not subdirs:
             return None
-        # Sap xep theo thoi gian tao moi nhat
-        subdirs.sort(key=lambda d: os.path.getmtime(os.path.join(cp_dir, d)), reverse=True)
-        return subdirs[0]
+
+        def parse_iter(name: str) -> int:
+            # iter_20 -> 20, iter_47_interrupt -> 47
+            parts = name.split("_")
+            return int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else -1
+
+        # Ưu tiên checkpoint định kỳ (không interrupt) để tránh load weights chưa flush đủ
+        regular = [d for d in subdirs if "interrupt" not in d]
+        pool = regular if regular else subdirs
+
+        # Sort theo số iteration, lấy cao nhất
+        pool.sort(key=parse_iter)
+        return pool[-1]
 
     def load_checkpoint(self, checkpoint_name: str) -> bool:
         if checkpoint_name == "heuristic" or not checkpoint_name:
@@ -115,10 +169,22 @@ class SimulationController:
             logger.info("[SERVER] Switched to Heuristic rule-based engine.")
             return True
 
-        target_path = os.path.join("be/checkpoint/training", checkpoint_name)
-        if not os.path.exists(target_path):
-            logger.error(f"[SERVER] Checkpoint path not found: {target_path}")
+        cp_dir = "be/checkpoint/training"
+        # BẢO MẬT: whitelist chính xác theo os.listdir() thay vì nối chuỗi trực
+        # tiếp vào os.path.join(). checkpoint_name đến từ request của client --
+        # nếu không kiểm tra, một giá trị là đường dẫn tuyệt đối (vd. "C:\\...")
+        # sẽ khiến os.path.join() BỎ QUA cp_dir và cho phép self.algo.restore()
+        # nạp bất kỳ đường dẫn nào trên máy (path traversal / arbitrary-file
+        # restore -- Ray/RLlib checkpoint restore deserialize nội dung, tiềm ẩn
+        # rủi ro thực thi mã nếu checkpoint đến từ nguồn không tin cậy).
+        valid_names = set()
+        if os.path.exists(cp_dir):
+            valid_names = {d for d in os.listdir(cp_dir) if os.path.isdir(os.path.join(cp_dir, d))}
+        if checkpoint_name not in valid_names:
+            logger.error(f"[SERVER] Rejected checkpoint load request for unrecognized name: {checkpoint_name!r}")
             return False
+
+        target_path = os.path.join(cp_dir, checkpoint_name)
 
         if self.algo is None:
             logger.warning("[SERVER] RLlib algorithm instance is not built.")
@@ -158,7 +224,30 @@ class SimulationController:
         }
         self.logger.ui_event_queue.append(shock_event)
         logger.info(f"[POLICY SHOCK ENFORCED] {self.policy_overrides}")
-    
+
+    def configure_population(self, num_employees: Optional[int], num_firms: Optional[int], num_banks: Optional[int]) -> Dict[str, int]:
+        """Đổi quy mô dân số/doanh nghiệp/ngân hàng cho một simulation MỚI (áp
+        dụng ngay một RESET). Biên hợp lý được kẹp (clip) để tránh cấu hình phi
+        thực tế (0 người/0 firm) hoặc quá tải bộ nhớ cho một dashboard tương tác
+        thời gian thực."""
+        if num_employees is not None:
+            self.env.num_employees = int(np.clip(int(num_employees), 5, 300))
+        if num_firms is not None:
+            self.env.num_firms = int(np.clip(int(num_firms), 1, 30))
+        if num_banks is not None:
+            self.env.num_banks = int(np.clip(int(num_banks), 1, 5))
+
+        self.is_running = False
+        self.current_step = 0
+        self.policy_overrides.clear()
+        self.env.reset(seed=42)
+
+        return {
+            "num_employees": self.env.num_employees,
+            "num_firms": self.env.num_firms,
+            "num_banks": self.env.num_banks,
+        }
+
     def get_actions(self) -> Dict[str, np.ndarray]:
         actions = {}
         raw_state = self.env.get_raw_environment_state()
@@ -195,11 +284,16 @@ class SimulationController:
                     gov_act[1] = self.policy_overrides["firm_tax"]
                 actions["gov_1"] = gov_act
 
-            if "bank_1" in actions:
-                bank_act = np.array(actions["bank_1"], dtype=np.float32, copy=True)
-                if "lending_rate" in self.policy_overrides:
-                    bank_act[0] = self.policy_overrides["lending_rate"]
-                actions["bank_1"] = bank_act
+            # Cú sốc lãi suất áp dụng CHO TOÀN BỘ ngân hàng trong hệ thống
+            # (giống một chỉ thị lãi suất kiểu ngân hàng trung ương), không chỉ
+            # một bank_id cố định -- cần thiết vì số lượng/ID ngân hàng có thể
+            # thay đổi khi người dùng cấu hình lại quy mô (xem CONFIGURE_POPULATION).
+            if "lending_rate" in self.policy_overrides:
+                for agent_id in list(actions.keys()):
+                    if agent_id.startswith("bank_"):
+                        bank_act = np.array(actions[agent_id], dtype=np.float32, copy=True)
+                        bank_act[0] = self.policy_overrides["lending_rate"]
+                        actions[agent_id] = bank_act
 
         return actions
 
@@ -223,6 +317,13 @@ class SimulationController:
                     actions = self.get_actions()
 
                     obs, rewards, terminateds, truncateds, infos = self.env.step(actions)
+
+                    # Re-apply policy overrides sau mỗi env.step() để duy trì lock bền vững.
+                    # Nếu không làm điều này, Economy agent sẽ multiply factor lên giá ngay
+                    # tick tiếp theo, khiến override của người dùng mất tác dụng sau 1 bước.
+                    if "living_cost" in self.policy_overrides:
+                        self.env.eco.base_living_cost = self.policy_overrides["living_cost"]
+
                     world_state = self.env.export_full_world_state()
 
                     events = [
@@ -269,7 +370,7 @@ class ControlRequest(BaseModel):
     action: str
     value: Any = None
 
-@app.post("/api/control")
+@app.post("/api/control", dependencies=[Depends(require_api_key)])
 async def handle_control(req: ControlRequest):
     if req.action == "PLAY":
         sim_controller.is_running = True
@@ -280,6 +381,9 @@ async def handle_control(req: ControlRequest):
         actions = sim_controller.get_actions()
         obs, rewards, terminateds, truncateds, infos = sim_controller.env.step(actions)
         sim_controller.current_step += 1
+        # Re-apply override sau step (nhất quán với simulation_loop)
+        if "living_cost" in sim_controller.policy_overrides:
+            sim_controller.env.eco.base_living_cost = sim_controller.policy_overrides["living_cost"]
         state = sim_controller.env.export_full_world_state()
 
         events = [
@@ -321,10 +425,26 @@ async def handle_control(req: ControlRequest):
         return {"status": "SUCCESS" if success else "FAILED", "active_checkpoint": sim_controller.active_checkpoint}
     elif req.action == "SET_POLICY" and isinstance(req.value, dict):
         sim_controller.apply_policy_shock(req.value)
+    elif req.action == "CONFIGURE_POPULATION" and isinstance(req.value, dict):
+        cfg = sim_controller.configure_population(
+            num_employees=req.value.get("num_employees"),
+            num_firms=req.value.get("num_firms"),
+            num_banks=req.value.get("num_banks"),
+        )
+        state = sim_controller.env.export_full_world_state()
+        await sim_controller.broadcast({
+            "type": "SIMULATION_RESET",
+            "timestep": 0,
+            "macro": state["macro"],
+            "agents": state["agents"],
+            "events": [],
+            "population_config": cfg
+        })
+        return {"status": "SUCCESS", "current_running": sim_controller.is_running, "population_config": cfg}
 
     return {"status": "SUCCESS", "current_running": sim_controller.is_running}
 
-@app.get("/api/checkpoints")
+@app.get("/api/checkpoints", dependencies=[Depends(require_api_key)])
 async def list_checkpoints():
     cp_dir = "be/checkpoint/training"
     available = []
@@ -337,7 +457,13 @@ async def list_checkpoints():
     }
 
 @app.websocket("/ws/stream")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)):
+    # WebSocket API của trình duyệt không cho gửi custom header khi bắt tay, nên
+    # token được truyền qua query string thay vì header X-API-Key như /api/*.
+    if token is None or not secrets.compare_digest(token, API_TOKEN):
+        await websocket.close(code=4401)
+        return
+
     await websocket.accept()
     sim_controller.active_connections.append(websocket)
     try:

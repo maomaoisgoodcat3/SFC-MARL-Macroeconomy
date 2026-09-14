@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import numpy as np
 from be.core.enums import LifeCycleStatus, AgentType
 from be.core.types import Observation, Action, ValidationResult, TransitionResult
@@ -23,6 +23,10 @@ class Firm(BaseAgent):
         self.capital_stock: float = 0.0
         self.debt: float = 0.0
         self.employee_ids: List[str] = []
+        # Quan hệ tín dụng với MỘT ngân hàng cụ thể khi hệ thống có nhiều ngân
+        # hàng (Petersen & Rajan, 1994, "The Benefits of Lending Relationships",
+        # Journal of Finance 49(1)) -- xem rule_engine.py Section 5.
+        self.creditor_bank_id: Optional[str] = None
         
         # Thong so tai chinh gan nhat de tinh Reward
         self.last_profit: float = 0.0
@@ -41,6 +45,7 @@ class Firm(BaseAgent):
         self.capital_stock = float(initial_capital * 0.5)
         self.debt = 0.0
         self.employee_ids = []
+        self.creditor_bank_id = None
         self.status = LifeCycleStatus.ACTIVE
 
     def observe(self, raw_environment_state: Dict[str, Any]) -> Observation:
@@ -135,6 +140,9 @@ class Firm(BaseAgent):
         self.last_profit = float(delta.get("executed_profit", 0.0))
         self.last_declare_ratio = float(delta.get("executed_declare_ratio", 1.0))
 
+        if "creditor_bank_id" in delta:
+            self.creditor_bank_id = delta["creditor_bank_id"]
+
         # Kiem tra dieu kien pha san
         if self.cash < 0.0 and self.debt > (self.capital_stock * 2.0 + 500.0):
             self.terminate(reason="Insolvency and excessive leverage")
@@ -143,20 +151,23 @@ class Firm(BaseAgent):
         if self.status == LifeCycleStatus.BANKRUPT or self.status == LifeCycleStatus.TERMINATED:
             return -100.0
 
-        # Ham loi ich tu loi nhuan thuc te
-        profit_reward = self.last_profit * 0.02
+        # Profit reward: scale 0.1 để profit ~20-50/month -> reward ~2-5 (positive signal rõ ràng)
+        profit_reward = self.last_profit * 0.1
 
-        # Phat chi phi dao duc neu tron thue
+        # Thưởng có headcount: khuyến khích thuê người
+        headcount_bonus = float(len(self.employee_ids)) * 0.5
+
+        # Phạt đạo đức nếu trốn thuế
         moral_cost = 2.0 * self.tax_morale * ((1.0 - self.last_declare_ratio) ** 2)
 
-        # Phat rui ro don bay tai chinh qua cao (No / Von)
+        # Phạt rủi ro đòn bẩy tài chính quá cao (Debt / Capital)
         leverage_penalty = 0.0
         if self.capital_stock > 0:
             leverage_ratio = self.debt / self.capital_stock
             if leverage_ratio > 1.5:
-                leverage_penalty = (leverage_ratio - 1.5) * 5.0
+                leverage_penalty = (leverage_ratio - 1.5) * 3.0
 
-        reward = profit_reward - moral_cost - leverage_penalty
+        reward = profit_reward + headcount_bonus - moral_cost - leverage_penalty
         return float(np.clip(reward, -50.0, 50.0))
 
     def export_state(self) -> Dict[str, Any]:
@@ -171,7 +182,8 @@ class Firm(BaseAgent):
             "debt": round(self.debt, 1),
             "headcount": len(valid_ids),
             "last_profit": round(self.last_profit, 1),
-            "last_revenue": round(self.last_revenue, 1)
+            "last_revenue": round(self.last_revenue, 1),
+            "creditor_bank_id": self.creditor_bank_id
         }
 
     def reset(self) -> None:
@@ -180,6 +192,7 @@ class Firm(BaseAgent):
         self.capital_stock = 0.0
         self.debt = 0.0
         self.employee_ids.clear()
+        self.creditor_bank_id = None
         self.last_profit = 0.0
         self.last_revenue = 0.0
 

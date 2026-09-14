@@ -143,18 +143,24 @@ class Supervisor(BaseAgent):
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         """
-        Muc tieu kiem toan:
-        Reward = So tien phat thu hoi (scaled) + Hieu qua ruc ro (Ti le phat hien) - Chi phi van hanh
+        Mục tiêu kiểm toán (Allingham & Sandmo, 1972):
+        Reward = Tiền phạt thu hồi + Thưởng bắt đúng - Phạt kiểm tra sai người - Chi phí vận hành
+
+        false_positive = audits_conducted - violations_detected (audit người vô tội)
+        Agent học: chọn đối tượng kiểm tra thông minh thay vì random bừa bãi
         """
         collection_reward = self.last_fines_collected * 0.01
-        
-        detection_efficiency = 0.0
-        if self.audits_conducted > 0:
-            detection_efficiency = (self.violations_detected / self.audits_conducted) * 10.0
+
+        # Thưởng từng vụ phát hiện đúng
+        true_positive_reward = float(self.violations_detected) * 2.0
+
+        # Phạt kiểm tra người vô tội (tốn chi phí, không thu được gì)
+        false_positives = max(0, self.audits_conducted - self.violations_detected)
+        false_positive_penalty = float(false_positives) * 0.5
 
         expense_penalty = self.last_operational_expense * 0.005
 
-        reward = collection_reward + detection_efficiency - expense_penalty
+        reward = collection_reward + true_positive_reward - false_positive_penalty - expense_penalty
         return float(np.clip(reward, -50.0, 50.0))
 
     def export_state(self) -> Dict[str, Any]:

@@ -23,19 +23,84 @@ const BACKEND_HTTP = isServedByFastAPI ? '' : 'http://127.0.0.1:8000';
 const BACKEND_WS_HOST = isServedByFastAPI ? window.location.host : '127.0.0.1:8000';
 
 // ==============================================================================
+// 1B. API KEY (server yêu cầu header X-API-Key cho mọi /api/*, xem be/server.py)
+// ==============================================================================
+function getApiKey() {
+    try {
+        return localStorage.getItem('ai_econ_api_key') || '';
+    } catch (e) {
+        return '';
+    }
+}
+
+function setApiKey(key) {
+    try {
+        localStorage.setItem('ai_econ_api_key', key);
+    } catch (e) { /* private mode / storage blocked -- ignore, key just won't persist */ }
+}
+
+function showToast(message) {
+    const banner = document.getElementById('toast-banner');
+    const msg = document.getElementById('toast-message');
+    if (!banner || !msg) return;
+    msg.innerText = message;
+    banner.classList.add('visible');
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => banner.classList.remove('visible'), 6000);
+}
+
+function initApiKeyInput() {
+    const group = document.getElementById('api-key-group');
+    const input = document.getElementById('api-key-input');
+    if (!input) return;
+    input.value = getApiKey();
+    if (group) group.classList.toggle('needs-key', !input.value);
+    input.addEventListener('change', () => {
+        setApiKey(input.value.trim());
+        if (group) group.classList.toggle('needs-key', !input.value.trim());
+        // Khoá mới chưa được WebSocket hiện tại dùng (token gắn lúc bắt tay) --
+        // buộc kết nối lại để áp dụng khoá mới ngay lập tức.
+        if (ws) { try { ws.close(); } catch (e) {} }
+    });
+}
+
+// ==============================================================================
 // 2. REST API & CONTROLS BINDING
 // ==============================================================================
 async function sendControl(action, value = null) {
     try {
         const res = await fetch(`${BACKEND_HTTP}/api/control`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': getApiKey() },
             body: JSON.stringify({ action, value })
         });
+        if (res.status === 401) {
+            showToast('Invalid or missing API key. Enter the key printed in the server console (top-right field).');
+            return null;
+        }
         return await res.json();
     } catch (err) {
         console.error('[FE] Failed to dispatch control:', err);
+        return null;
     }
+}
+
+function resetHistoryAndLogs() {
+    state.history.months = [];
+    state.history.gdp = [];
+    state.history.gini = [];
+    if (macroChart) {
+        macroChart.data.labels = [];
+        macroChart.data.datasets[0].data = [];
+        macroChart.data.datasets[1].data = [];
+        macroChart.update();
+    }
+    const bulletinStream = document.getElementById('bulletin-stream-container');
+    const ledgerStream = document.getElementById('ledger-stream-container');
+    if (bulletinStream) bulletinStream.innerHTML = '<div class="empty-log-hint">No events yet — press RUN to start the simulation.</div>';
+    if (ledgerStream) ledgerStream.innerHTML = '<div class="empty-log-hint">No transactions yet.</div>';
+    const countEl = document.getElementById('log-count');
+    if (countEl) countEl.innerText = '0 events';
 }
 
 function initControlButtons() {
@@ -48,17 +113,7 @@ function initControlButtons() {
     bind('btn-pause', () => sendControl('PAUSE'));
     bind('btn-step', () => sendControl('STEP'));
     bind('btn-reset', () => {
-        state.history.months = [];
-        state.history.gdp = [];
-        state.history.gini = [];
-        if (macroChart) {
-            macroChart.data.labels = [];
-            macroChart.data.datasets[0].data = [];
-            macroChart.data.datasets[1].data = [];
-            macroChart.update();
-        }
-        document.getElementById('bulletin-stream-container').innerHTML = '';
-        document.getElementById('ledger-stream-container').innerHTML = '';
+        resetHistoryAndLogs();
         sendControl('RESET');
     });
 
@@ -103,12 +158,58 @@ function initPolicySandboxControls() {
     }
 }
 
+// ==============================================================================
+// 2B. SIMULATION SETUP (quy mô Worker/Firm/Bank -- CONFIGURE_POPULATION)
+// ==============================================================================
+function initSetupPanel() {
+    const btn = document.getElementById('btn-apply-setup');
+    if (!btn) return;
+
+    const readInt = (id, fallback) => {
+        const el = document.getElementById(id);
+        const v = el ? parseInt(el.value, 10) : NaN;
+        return Number.isFinite(v) ? v : fallback;
+    };
+
+    btn.addEventListener('click', async () => {
+        const payload = {
+            num_employees: readInt('setup-num-workers', 50),
+            num_firms: readInt('setup-num-firms', 5),
+            num_banks: readInt('setup-num-banks', 1)
+        };
+
+        btn.disabled = true;
+        btn.innerText = 'Restarting…';
+        try {
+            const result = await sendControl('CONFIGURE_POPULATION', payload);
+            if (result && result.population_config) {
+                // Phản chiếu giá trị thực tế đã được server kẹp biên (clip) trở lại UI
+                const cfg = result.population_config;
+                const wEl = document.getElementById('setup-num-workers');
+                const fEl = document.getElementById('setup-num-firms');
+                const bEl = document.getElementById('setup-num-banks');
+                if (wEl) wEl.value = cfg.num_employees;
+                if (fEl) fEl.value = cfg.num_firms;
+                if (bEl) bEl.value = cfg.num_banks;
+                resetHistoryAndLogs();
+            }
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Apply & New Simulation';
+        }
+    });
+}
+
 async function initCheckpointsDropdown() {
     const select = document.getElementById('checkpoint-select');
     if (!select) return;
 
     try {
-        const res = await fetch(`${BACKEND_HTTP}/api/checkpoints`);
+        const res = await fetch(`${BACKEND_HTTP}/api/checkpoints`, { headers: { 'X-API-Key': getApiKey() } });
+        if (res.status === 401) {
+            showToast('Invalid or missing API key -- cannot list checkpoints.');
+            return;
+        }
         const data = await res.json();
 
         select.innerHTML = '';
@@ -130,17 +231,7 @@ async function initCheckpointsDropdown() {
 
         select.addEventListener('change', async (e) => {
             await sendControl('LOAD_CHECKPOINT', e.target.value);
-            state.history.months = [];
-            state.history.gdp = [];
-            state.history.gini = [];
-            if (macroChart) {
-                macroChart.data.labels = [];
-                macroChart.data.datasets[0].data = [];
-                macroChart.data.datasets[1].data = [];
-                macroChart.update();
-            }
-            document.getElementById('bulletin-stream-container').innerHTML = '';
-            document.getElementById('ledger-stream-container').innerHTML = '';
+            resetHistoryAndLogs();
             await sendControl('RESET');
         });
     } catch (err) {
@@ -453,6 +544,9 @@ function appendLog(e) {
     const stream = document.getElementById(streamId);
     if (!stream) return;
 
+    const placeholder = stream.querySelector('.empty-log-hint');
+    if (placeholder) placeholder.remove();
+
     let textContent = '';
     const p = e.payload || {};
 
@@ -461,17 +555,20 @@ function appendLog(e) {
         textContent = `[M${e.timestep}] CHÍNH SÁCH: Cầm quyền áp đặt Shock: Thuế CN ${p.worker_tax}%, Thuế DN ${p.firm_tax}%, Lãi suất ${p.lending_rate}%, Sàn sống $${p.living_cost}`;
     } else if (e.type === 'TAX_EVADED') {
         const sourceLabel = e.source.toUpperCase();
+        // Payload thực tế chỉ chứa amount (thuế trốn) + gross/profit tuyệt đối,
+        // KHÔNG có hidden_pct -- không suy diễn tỉ lệ % để tránh hiển thị sai.
         if (p.gross !== undefined) {
-            textContent = `[M${e.timestep}] GIAN LẬN: ${sourceLabel} giấu ${p.hidden_pct}% thu nhập (Gross $${p.gross}), trốn $${p.amount} tiền thuế!`;
+            textContent = `[M${e.timestep}] GIAN LẬN: ${sourceLabel} khai thiếu thu nhập (Gross $${p.gross}), trốn $${p.amount} tiền thuế!`;
         } else {
-            textContent = `[M${e.timestep}] GIAN LẬN: ${sourceLabel} giấu ${p.hidden_pct}% lợi nhuận (Lãi $${p.profit}), trốn $${p.amount} thuế DN!`;
+            textContent = `[M${e.timestep}] GIAN LẬN: ${sourceLabel} khai thiếu lợi nhuận (Lãi $${p.profit}), trốn $${p.amount} thuế DN!`;
         }
     } else if (e.type === 'PENALTY_ENFORCED') {
         textContent = `[M${e.timestep}] XỬ PHẠT: Thanh tra bắt quả tang ${e.target.toUpperCase()}, phạt $${p.fine} (Thuế trốn: $${p.evaded})!`;
     } else if (e.type === 'AGENT_DIED') {
         textContent = `[M${e.timestep}] KHAI TỬ: ${e.source.toUpperCase()} qua đời lúc ${p.age} tuổi [Lý do: ${p.reason}]. Di sản thu về Kho bạc.`;
     } else if (e.type === 'AGENT_BANKRUPT') {
-        textContent = `[M${e.timestep}] VỠ NỢ: ${e.source.toUpperCase()} giải thể do âm vốn, quỵt nợ ngân hàng $${p.bad_debt}!`;
+        const recovered = p.recovered !== undefined ? ` (thu hồi được $${p.recovered})` : '';
+        textContent = `[M${e.timestep}] VỠ NỢ: ${e.source.toUpperCase()} giải thể, ${e.target.toUpperCase()} ghi nhận nợ xấu $${p.bad_debt}${recovered}!`;
     } else if (e.type === 'AGENT_BORN') {
         textContent = `[M${e.timestep}] SINH MỚI: ${e.target.toUpperCase()} gia nhập xã hội (Vốn mồi $${p.cash}, Kỹ năng: ${p.skill.toFixed(2)})`;
     } else if (e.type === 'WAGE_PAID') {
@@ -664,7 +761,10 @@ function inspectAgent(agentId) {
 // ==============================================================================
 let ws = null;
 function initWebSocket() {
-    const wsUrl = `ws://${BACKEND_WS_HOST}/ws/stream`;
+    // Trình duyệt không cho gắn custom header khi bắt tay WebSocket, nên token
+    // được truyền qua query string (be/server.py đọc ?token=... trên endpoint
+    // /ws/stream, khác với header X-API-Key dùng cho /api/*).
+    const wsUrl = `ws://${BACKEND_WS_HOST}/ws/stream?token=${encodeURIComponent(getApiKey())}`;
     const dot = document.getElementById('connection-dot');
     const label = document.getElementById('connection-status');
 
@@ -681,6 +781,11 @@ function initWebSocket() {
             }
         };
         ws.onclose = () => {
+            // Lưu ý: server từ chối bắt tay (close TRƯỚC accept()) khi token sai
+            // -- trình duyệt nhận đây là handshake thất bại (không có close code
+            // tuỳ chỉnh để phân biệt với mất mạng thông thường), nên không hiển
+            // thị toast riêng ở đây; cảnh báo API key sai đã hiển thị đầy đủ qua
+            // các request REST /api/* (xem sendControl()).
             if (dot) dot.classList.remove('connected');
             if (label) label.innerText = 'DISCONNECTED';
             setTimeout(initWebSocket, 2000);
@@ -696,9 +801,11 @@ function initWebSocket() {
 }
 
 // KHOI DONG DONG BO
+initApiKeyInput();
 initControlButtons();
 initCheckpointsDropdown();
 initPolicySandboxControls();
+initSetupPanel();
 initLogTabs();
 initMacroChart();
 initTopologyGraph();

@@ -28,6 +28,11 @@ class Economy(BaseAgent):
         self.cpi_index: float = 100.0
         self.step_trade_volume: float = 0.0
         self.market_liquidity_reserve: float = 0.0
+        # Tổng chi phí khấu hao tư bản (overhead) toàn thị trường kỳ gần nhất --
+        # kênh "rò rỉ tiền" duy nhất được cho phép ngoài DefaultedDebt trong đẳng
+        # thức bảo toàn SFC (xem rule_engine.py, Section 3-4). Phơi bày tường
+        # minh để kiểm toán tự động (be/tests/test_sfc_accounting.py).
+        self.last_capital_depreciation: float = 0.0
 
     def initialize(self, 
                    initial_living_cost: float = 15.0,
@@ -136,28 +141,63 @@ class Economy(BaseAgent):
         # Tinh toan Lam phat ky nay
         cost_growth = (self.base_living_cost - self.last_base_living_cost) / self.last_base_living_cost
         self.inflation_rate = cost_growth
-        self.cpi_index *= (1.0 + self.inflation_rate)
+        # Kep bien chi so CPI de tranh tran so float32 khi ep kieu trong observe()
+        # o cac chu ky mo phong rat dai (hang tram thang). 1e6 (CPI = 1,000,000
+        # so voi goc 100) da tuong ung sieu lam phat cuc doan -- kep tai day chi
+        # nham bao ve on dinh so hoc, khong lam sai lech tin hieu lam phat thang
+        # (inflation_rate) vi bien do van duoc tinh truc tiep tu base_living_cost
+        # o tren, khong phu thuoc vao cpi_index.
+        self.cpi_index = float(np.clip(self.cpi_index * (1.0 + self.inflation_rate), 1e-6, 1e6))
 
         self.step_trade_volume = float(delta.get("total_market_turnover", 0.0))
         self.market_liquidity_reserve += float(delta.get("liquidity_delta", 0.0))
+        self.last_capital_depreciation = float(delta.get("capital_depreciation_cost", 0.0))
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         """
-        Muc tieu Tao lap Thi truong:
-        Reward = On dinh gia ca (Phat sai lech lam phat khoi 2%) - Phat Thieu hut nha o + Quy mo thanh khoan
+        Mục tiêu Tạo lập Thị trường — phiên bản sửa lỗi exploit giá:
+
+        Vấn đề cũ: volume_reward = log1p(nominal_spending) * 0.5
+            -> Khi living_cost tăng, workers buộc phải chi nhiều tiền hơn để mua
+               cùng lượng hàng -> nominal volume tăng -> Economy được thưởng dù
+               thực chất không có thêm hàng hóa lưu thông. Đây là degenerate policy:
+               Economy học tăng giá 10%/tháng liên tục để maximize reward.
+
+        Fix: Đo REAL volume (số lượng hàng thực) = nominal_spending / living_cost.
+             Thêm dead_worker_penalty để Economy chịu hậu quả trực tiếp khi workers
+             chết vì không đủ tiền sống (mất demand vĩnh viễn).
+
+        Nguồn:
+        - Real vs nominal GDP distinction: Hicks (1946), "Value and Capital"
+        - Market maker penalized for demand destruction: Tirole (1988),
+          "The Theory of Industrial Organization", MIT Press, Ch.1
+        - Inflation target penalty (quadratic loss): Svensson (1997),
+          "Inflation Forecast Targeting", European Economic Review 41(6), 1111-1146
         """
-        # Phat chenh lech muc tieu lam phat (2% hang nam ~ 0.0016 hang thang)
+        # 1. REAL volume reward: đo số lượng hàng thực tế lưu thông, không phải tiền
+        #    real_volume = nominal_spending / price_level (deflate về giá gốc)
+        #    log scale để tránh signal quá lớn khi volume tăng đột biến
+        price_level = max(1.0, self.base_living_cost)
+        real_volume = self.step_trade_volume / price_level
+        real_volume_reward = np.log1p(max(0.0, real_volume)) * 2.0
+
+        # 2. Inflation penalty quadratic (Svensson, 1997)
+        #    Target: 0.0016/month (~2%/year). Penalty tăng theo bình phương độ lệch.
+        #    Hệ số 50 giữ nguyên từ calibration cũ — đã ổn định trong training.
         inflation_penalty = 50.0 * ((self.inflation_rate - 0.0016) ** 2)
 
-        # Phat tinh trang can kiet nha o tren thi truong
+        # 3. Dead worker penalty: mỗi worker chết = mất 1 đơn vị demand vĩnh viễn
+        #    Economy phải chịu hậu quả trực tiếp của việc đẩy giá quá cao.
+        #    Hệ số 20: đủ lớn để outweigh volume gain từ việc tăng giá gây chết người.
+        new_deaths = int(transition_result.state_delta.get("new_deaths", 0))
+        dead_worker_penalty = float(new_deaths) * 20.0
+
+        # 4. Housing inventory penalty (giữ nguyên)
         housing_penalty = 0.0
         if self.housing_inventory < 5:
             housing_penalty = float(5 - self.housing_inventory) * 2.0
 
-        # Thuong cho viec thi truong luu thong thanh khoan tot
-        volume_reward = np.log1p(max(0.0, self.step_trade_volume)) * 0.5
-
-        reward = volume_reward - inflation_penalty - housing_penalty
+        reward = real_volume_reward - inflation_penalty - dead_worker_penalty - housing_penalty
         return float(np.clip(reward, -50.0, 50.0))
 
     def export_state(self) -> Dict[str, Any]:
@@ -170,7 +210,8 @@ class Economy(BaseAgent):
             "housing_inventory": self.housing_inventory,
             "inflation_rate": self.inflation_rate,
             "cpi_index": self.cpi_index,
-            "step_trade_volume": self.step_trade_volume
+            "step_trade_volume": self.step_trade_volume,
+            "last_capital_depreciation": round(self.last_capital_depreciation, 2)
         }
 
     def reset(self) -> None:
@@ -184,6 +225,7 @@ class Economy(BaseAgent):
         self.cpi_index = 100.0
         self.step_trade_volume = 0.0
         self.market_liquidity_reserve = 100000.0
+        self.last_capital_depreciation = 0.0
 
     def terminate(self, reason: str = "") -> None:
         super().terminate(reason)

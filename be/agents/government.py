@@ -168,17 +168,31 @@ class Government(BaseAgent):
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         """
         Social Welfare Objective:
-        Reward = Tang truong GDP - Phat Bat binh dang (Gini) - Phat Tu vong - Phat No cong
-        """
-        gdp_growth = (self.current_gdp - self.last_gdp) * 0.001
-        gini_penalty = 50.0 * (self.current_gini ** 2)
-        
-        new_deaths = transition_result.state_delta.get("new_deaths", 0)
-        death_penalty = float(new_deaths) * 15.0
-        
-        debt_penalty = (self.public_debt * 0.0001) if self.public_debt > 0 else 0.0
+        Reward = GDP_level (normalized) + GDP_growth - Gini_penalty - Death_penalty - Debt_penalty
 
-        social_welfare = gdp_growth - gini_penalty - death_penalty - debt_penalty
+        Thiết kế:
+        - GDP level ~200-500 -> normalized ~0.2-0.5 (positive baseline)
+        - Gini [0,1] -> penalty tối đa 10 (không lấn át GDP)
+        - Mỗi cái chết -> -5 (đủ để agent quan tâm nhưng không dominate)
+        - Công nợ -> penalty nhỏ, dài hạn
+        """
+        # GDP level: positive signal để agent biết nền kinh tế đang hoạt động
+        gdp_level = self.current_gdp * 0.002
+
+        # GDP growth: thưởng tăng trưởng
+        gdp_growth = (self.current_gdp - self.last_gdp) * 0.005
+
+        # Gini penalty: [0,1]^2 * 10 -> tối đa -10
+        gini_penalty = 10.0 * (self.current_gini ** 2)
+
+        # Death penalty: mỗi cái chết = -5
+        new_deaths = int(transition_result.state_delta.get("new_deaths", 0))
+        death_penalty = float(new_deaths) * 5.0
+
+        # Debt penalty: nhỏ, chỉ kích hoạt khi nợ lớn
+        debt_penalty = (self.public_debt * 0.00005) if self.public_debt > 0 else 0.0
+
+        social_welfare = gdp_level + gdp_growth - gini_penalty - death_penalty - debt_penalty
         return float(np.clip(social_welfare, -100.0, 100.0))
 
     def export_state(self) -> Dict[str, Any]:
