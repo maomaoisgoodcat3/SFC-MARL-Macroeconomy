@@ -20,7 +20,18 @@ class Bank(BaseAgent):
         self.total_loans: float = 0.0
         self.non_performing_loans: float = 0.0
         
-        # Chinh sach lai suat va an toan von
+        # Chinh sach lai suat va an toan von.
+        # QUY UOC: lending_rate/deposit_rate la LAI SUAT NAM (annual, simple/
+        # linear), KHONG PHAI lai suat thang. rule_engine.py luon chia cho 12.0
+        # truoc khi ap dung vao tung buoc thang (vd. Section 5:
+        # "monthly_interest = firm.debt * (lending_rate / 12.0)"; Section 8B:
+        # "gross_deposit_interest = old_deposit * (deposit_rate / 12.0)") --
+        # KHONG duoc chia cho 12 mot lan nua o bat ky noi nao khac dung
+        # lending_rate/deposit_rate, se lam lai suat thuc te nho hon 12 lan gia
+        # tri du dinh. Voi bien action space [0.01, 0.25] (lending) va
+        # [0.005, 0.15] (deposit) o rllib_wrapper.py, day da la khoang lai suat
+        # nam hop ly cho thi truong tin dung emerging market (1%-25%/nam,
+        # 0.5%-15%/nam) -- KHONG can quy doi them.
         self.lending_rate: float = 0.06
         self.deposit_rate: float = 0.02
         self.reserve_requirement_ratio: float = 0.10
@@ -171,11 +182,28 @@ class Bank(BaseAgent):
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         """
         Hàm mục tiêu tài chính của Ngân hàng:
-        Reward = Bien lai rong (NIM) - Phat No xau (NPL) - Phat Vi pham Du tru bat buoc
+        Reward = Biên lãi ròng (NIM) - Phạt Nợ xấu MỚI (dòng) - Phạt TỒN KHO
+        Nợ xấu (tỷ lệ NPL/Tổng dư nợ) - Phạt Vi phạm Dự trữ bắt buộc
+
+        Ghi chú hiệu chỉnh (quan sát thực nghiệm qua nhiều lần train dài
+        hạn): trước đây chỉ phạt theo DÒNG (last_default_loss, phát sinh MỘT
+        LẦN đúng tháng vỡ nợ) trong khi lãi vay của MỘT khoản vay được cộng
+        dồn NHIỀU THÁNG liên tục (net_interest_margin) -- tạo bất đối xứng
+        khuyến khích cho vay rủi ro cao (kỳ vọng lãi nhiều tháng > kỳ vọng lỗ
+        một lần). Hệ quả quan sát được: NPL tăng tuyến tính không có dấu hiệu
+        bão hoà qua hàng chục iteration training. Hai thay đổi (hệ số cấu
+        trúc TỰ DO HIỆU CHỈNH, không phải công thức mới):
+          1. Tăng hệ số phạt dòng 0.02 -> 0.06.
+          2. Bổ sung phạt theo TỶ LỆ tồn kho NPL/tổng dư nợ mỗi bước, để
+             ngân hàng chịu áp lực liên tục giảm nợ xấu tồn đọng chứ không
+             chỉ tránh tạo thêm nợ xấu mới trong đúng tháng đó.
         """
         net_interest_margin = (self.last_interest_income - self.last_interest_expense) * 0.01
-        npl_penalty = self.last_default_loss * 0.02
-        
+        npl_flow_penalty = self.last_default_loss * 0.06
+
+        npl_ratio = self.non_performing_loans / max(self.total_loans, 1.0)
+        npl_stock_penalty = npl_ratio * 50.0
+
         # Phat neu du tru thuc te thap hon ty le bat buoc
         reserve_penalty = 0.0
         required_reserves = self.total_deposits * self.reserve_requirement_ratio
@@ -183,7 +211,7 @@ class Bank(BaseAgent):
             deficit = required_reserves - self.reserves
             reserve_penalty = deficit * 0.05
 
-        reward = net_interest_margin - npl_penalty - reserve_penalty
+        reward = net_interest_margin - npl_flow_penalty - npl_stock_penalty - reserve_penalty
         return float(np.clip(reward, -100.0, 100.0))
 
     def export_state(self) -> Dict[str, Any]:

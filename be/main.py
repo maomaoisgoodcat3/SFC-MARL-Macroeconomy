@@ -42,15 +42,27 @@ def parse_args():
     parser.add_argument("--checkpoint-freq", type=int, default=20, help="Save frequency (iterations)")
     parser.add_argument("--checkpoint-dir", type=str, default="be/checkpoint", help="Directory for checkpoints")
     parser.add_argument("--restore-checkpoint", type=str, default=None, help="Explicit checkpoint path to restore")
+    parser.add_argument(
+        "--scenario-name", type=str, default="training",
+        help=(
+            "Ten kich ban calibration/thi nghiem (vd. em_baseline, high_tax, "
+            "low_reg). Checkpoint duoc luu/doc tai <checkpoint-dir>/<scenario-name>/. "
+            "Mac dinh 'training' de tuong thich nguoc hoan toan voi cau truc thu "
+            "muc be/checkpoint/training/ da co tu truoc (khong doi ten scenario "
+            "mac dinh thi khong can di chuyen checkpoint cu). Dung ten khac de "
+            "chay song song nhieu kich ban calibration ma khong ghi de len nhau."
+        )
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     return parser.parse_args()
 
-def find_latest_checkpoint(checkpoint_base: str) -> str:
+def find_latest_checkpoint(checkpoint_base: str, scenario_name: str = "training") -> str:
     """
-    Quet chinh xac thu muc checkpoint co chi so iteration cao nhat,
-    tuong thich voi ca checkpoint dinh ky va checkpoint khan cap (_interrupt).
+    Quet chinh xac thu muc checkpoint co chi so iteration cao nhat trong
+    KICH BAN (scenario) duoc chi dinh, tuong thich voi ca checkpoint dinh ky
+    va checkpoint khan cap (_interrupt).
     """
-    training_cp_dir = os.path.join(checkpoint_base, "training")
+    training_cp_dir = os.path.join(checkpoint_base, scenario_name)
     if not os.path.exists(training_cp_dir):
         return ""
 
@@ -83,7 +95,7 @@ def find_latest_checkpoint(checkpoint_base: str) -> str:
 
 def run_training(args):
     logger.info("[SYSTEM] Initializing Institutional AI Economist Training Engine...")
-    logger.info(f"[CONFIG] Employees: {args.num_employees} | Firms: {args.num_firms} | Banks: {args.num_banks} | Max Steps: {args.max_steps}")
+    logger.info(f"[CONFIG] Scenario: {args.scenario_name} | Employees: {args.num_employees} | Firms: {args.num_firms} | Banks: {args.num_banks} | Max Steps: {args.max_steps}")
     logger.info(f"[CONFIG] Batch Size: {args.train_batch_size} | Total Iterations: {args.train_iters} | Checkpoint Freq: {args.checkpoint_freq}")
 
     ray.init(ignore_reinit_error=True)
@@ -127,7 +139,7 @@ def run_training(args):
             num_gpus=0                   # Chạy thuần CPU
         )
         .env_runners(
-            num_env_runners=8,
+            num_env_runners=args.num_workers,  # truoc day bi hardcode = 8, bo qua --num-workers
             rollout_fragment_length=100
         )
         .debugging(seed=args.seed)
@@ -139,7 +151,7 @@ def run_training(args):
     # Phuc hoi Checkpoint (Restore)
     target_checkpoint = args.restore_checkpoint
     if not target_checkpoint:
-        target_checkpoint = find_latest_checkpoint(args.checkpoint_dir)
+        target_checkpoint = find_latest_checkpoint(args.checkpoint_dir, args.scenario_name)
 
     current_iter = 0
     if target_checkpoint and os.path.exists(target_checkpoint):
@@ -155,16 +167,33 @@ def run_training(args):
             # khong the restore duoc nua. Khong bat exception se lam toan bo
             # tien trinh train sup do ngay khi khoi dong neu thu muc checkpoint
             # cu (be/checkpoint/training/) van con ton tai.
+            #
+            # QUAN TRONG: algo.restore() KHONG atomic -- khi no fail giua
+            # chung (vd. o buoc nap trong so mo hinh), no co the da kip nap
+            # MOT PHAN trang thai khac (vd. optimizer state/Adam exp_avg cua
+            # checkpoint cu, kich thuoc 12) vao dung object `algo` hien tai
+            # (da co tham so model moi, kich thuoc 13) truoc khi rai exception.
+            # Neu chi bat loi roi tiep tuc dung LAI object `algo` do, buoc
+            # optimizer.step() dau tien se crash vi exp_avg (12) khong khop
+            # voi gradient/tham so (13) -- da xay ra thuc te. Cach an toan duy
+            # nhat la HUY object algo cu (giai phong Ray actor) va BUILD LAI
+            # hoan toan moi tu dau, dam bao khong con trang thai nhiem doc.
             logger.warning(
                 f"[SYSTEM] Failed to restore checkpoint {target_checkpoint} (likely an "
                 f"incompatible observation/action space from a previous model version): "
-                f"{str(exc)}. Starting fresh from iteration 0 instead."
+                f"{str(exc)}. Discarding this algorithm instance and building a fresh one "
+                f"(a failed restore can leave partial/inconsistent internal state)."
             )
+            try:
+                algo.stop()
+            except Exception:
+                pass
+            algo = config.build_algo() if hasattr(config, "build_algo") else config.build()
             current_iter = 0
     else:
         logger.info("[SYSTEM] No existing checkpoint identified. Training starting from iteration 0.")
 
-    training_cp_dir = os.path.join(args.checkpoint_dir, "training")
+    training_cp_dir = os.path.join(args.checkpoint_dir, args.scenario_name)
     os.makedirs(training_cp_dir, exist_ok=True)
 
     current_iter = algo.iteration

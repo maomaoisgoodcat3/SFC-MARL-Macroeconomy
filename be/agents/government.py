@@ -172,7 +172,13 @@ class Government(BaseAgent):
 
         Thiết kế:
         - GDP level ~200-500 -> normalized ~0.2-0.5 (positive baseline)
-        - Gini [0,1] -> penalty tối đa 10 (không lấn át GDP)
+        - Gini [0,1] -> penalty tối đa 25 (hệ số cấu trúc TỰ DO HIỆU CHỈNH,
+          nâng từ 10 lên 25 sau khi quan sát thực nghiệm nhiều lần train dài
+          hạn: hệ số 10 quá yếu so với gdp_level/gdp_growth nên Gini hội tụ
+          bất động quanh 0.80-0.86 thay vì giảm -- xem thêm cơ chế thuế lãi
+          tiền gửi mới thêm ở rule_engine.py Mục 8B giải quyết TẬN GỐC nguồn
+          gây bất bình đẳng (lãi kép miễn thuế), còn hệ số này chỉ là tín
+          hiệu reward bổ trợ, không thay thế cơ chế kinh tế)
         - Mỗi cái chết -> -5 (đủ để agent quan tâm nhưng không dominate)
         - Công nợ -> penalty nhỏ, dài hạn
         """
@@ -182,8 +188,8 @@ class Government(BaseAgent):
         # GDP growth: thưởng tăng trưởng
         gdp_growth = (self.current_gdp - self.last_gdp) * 0.005
 
-        # Gini penalty: [0,1]^2 * 10 -> tối đa -10
-        gini_penalty = 10.0 * (self.current_gini ** 2)
+        # Gini penalty: [0,1]^2 * 25 -> tối đa -25
+        gini_penalty = 25.0 * (self.current_gini ** 2)
 
         # Death penalty: mỗi cái chết = -5
         new_deaths = int(transition_result.state_delta.get("new_deaths", 0))

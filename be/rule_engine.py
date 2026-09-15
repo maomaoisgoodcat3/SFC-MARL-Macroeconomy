@@ -701,7 +701,30 @@ class RuleEngine:
             # (reserves) mà ngân hàng bỏ ra -- không vi phạm bảo toàn SFC vì đây
             # là một khoản chuyển giao giá trị thực từ vốn chủ sở hữu ngân hàng
             # sang người gửi tiền, không phải tiền sinh ra từ hư không.
-            deposit_interest = old_deposit * (deposit_rate / 12.0)
+            gross_deposit_interest = old_deposit * (deposit_rate / 12.0)
+
+            # Lãi tiền gửi là thu nhập vốn (capital income) và bị đánh thuế
+            # thu nhập THEO ĐÚNG CÙNG sắc thuế luỹ tiến đã áp dụng cho tiền
+            # lương ở Mục 6 (worker_tax_rate) -- đây KHÔNG phải một sắc thuế
+            # mới được bịa ra, mà là khép lại một lỗ hổng thiết kế: trong mọi
+            # hệ thống thuế thu nhập thực tế (vd. US IRS Publication 550; đa
+            # số hệ thống thuế thu nhập cá nhân các nước OECD), lãi tiền gửi
+            # ngân hàng là thu nhập chịu thuế CÙNG LOẠI với tiền lương. Việc
+            # bỏ sót khoản thuế này khiến của cải gửi ngân hàng tăng trưởng
+            # kép HOÀN TOÀN miễn thuế trong khi thu nhập lao động luôn bị
+            # đánh thuế -- một kênh bất đối xứng khiến Gini index tăng có
+            # tính CẤU TRÚC theo thời gian, bất kể chính sách tái phân phối
+            # nào khác của Chính phủ (quan sát thực nghiệm qua nhiều lần
+            # train dài hạn). Ngân hàng vẫn CHI TRẢ đủ phần lãi GỘP từ vốn tự
+            # có (reserves) như thiết kế gốc; phần thuế chỉ được khấu trừ
+            # (withhold) trước khi cộng vào số dư CỦA NGƯỜI GỬI, sau đó
+            # chuyển thẳng vào Kho bạc -- không tạo ra hay huỷ tiền, chỉ đổi
+            # hướng một phần dòng tiền vốn đã tồn tại (bảo toàn SFC).
+            interest_tax = gross_deposit_interest * worker_tax_rate
+            deposit_interest = gross_deposit_interest - interest_tax
+            deltas[gov.agent_id]["tax_collected"] = (
+                deltas[gov.agent_id].get("tax_collected", 0.0) + interest_tax
+            )
             deposit_after_interest = old_deposit + deposit_interest
 
             deposit_flow = 0.0
@@ -716,9 +739,14 @@ class RuleEngine:
 
             # Tổng biến động tiền gửi/lãi phải trả được hạch toán vào ĐÚNG ngân
             # hàng đang giữ số dư của người này (cộng dồn qua nhiều hộ gia đình).
+            # deposits_delta dung phan lai RONG (sau thue) vi do la khoan no
+            # (liability) thuc su ngan hang con phai tra cho nguoi gui; con
+            # interest_expense/reserves_delta dung phan lai GOP vi day moi la
+            # tong tien mat thuc su roi khoi reserves cua ngan hang (mot phan
+            # sang nguoi gui, mot phan sang Kho bac qua interest_tax o tren).
             deltas[depository_id]["deposits_delta"] = deltas[depository_id].get("deposits_delta", 0.0) + deposit_interest + deposit_flow
-            deltas[depository_id]["interest_expense"] = deltas[depository_id].get("interest_expense", 0.0) + deposit_interest
-            deltas[depository_id]["reserves_delta"] = deltas[depository_id].get("reserves_delta", 0.0) - deposit_interest
+            deltas[depository_id]["interest_expense"] = deltas[depository_id].get("interest_expense", 0.0) + gross_deposit_interest
+            deltas[depository_id]["reserves_delta"] = deltas[depository_id].get("reserves_delta", 0.0) - gross_deposit_interest
 
         # QUẢN TRỊ TỬ VONG SINH HỌC & NỢ CÙNG QUẪN
         new_deaths = 0

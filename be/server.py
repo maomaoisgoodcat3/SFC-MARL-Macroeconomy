@@ -62,6 +62,14 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API
     if x_api_key is None or not secrets.compare_digest(x_api_key, API_TOKEN):
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
+# Ten kich ban calibration/thi nghiem ma tien trinh server nay phuc vu checkpoint
+# (xem be/main.py --scenario-name). Server khong nhan CLI arg truc tiep (khoi
+# dong qua uvicorn be.server:app), nen doc tu bien moi truong; mac dinh
+# "training" de tuong thich nguoc hoan toan voi cau truc be/checkpoint/training/
+# da co tu truoc. Dat AI_ECONOMIST_SCENARIO=<ten> truoc khi khoi dong server de
+# phuc vu dashboard cho mot kich ban calibration khac (vd. high_tax, low_reg).
+SCENARIO_NAME = os.environ.get("AI_ECONOMIST_SCENARIO", "training")
+
 # CORS: KHÔNG dùng wildcard "*" kết hợp allow_credentials=True (kết hợp này bị
 # chính đặc tả CORS/trình duyệt coi là cấu hình không an toàn). Chỉ cho phép
 # các origin tường minh -- mặc định là host chạy chính server này; có thể mở
@@ -109,29 +117,40 @@ class SimulationController:
         self.env.reset(seed=42)
         self._init_rllib_inference()
 
+    def _build_fresh_algo(self):
+        """Xay dung mot Algorithm instance HOAN TOAN MOI (trong so khoi tao
+        ngau nhien, optimizer state rong). Tach thanh ham rieng vi can goi lai
+        o HAI noi: khoi tao lan dau, VA de phuc hoi sau khi mot lan restore()
+        that bai giua chung (xem load_checkpoint) -- algo.restore() khong
+        atomic, neu that bai co the de lai trang thai noi bo khong nhat quan
+        (vd. optimizer state cua checkpoint cu bi nap mot phan vao model moi),
+        nen KHONG duoc tiep tuc dung lai object algo cu sau mot lan restore
+        loi; phai build moi hoan toan (cung loi da vay o be/main.py)."""
+        policies = {
+            "policy_employee": (None, EMPLOYEE_OBS_SPACE, EMPLOYEE_ACT_SPACE, {}),
+            "policy_firm": (None, FIRM_OBS_SPACE, FIRM_ACT_SPACE, {}),
+            "policy_government": (None, GOVERNMENT_OBS_SPACE, GOVERNMENT_ACT_SPACE, {}),
+            "policy_bank": (None, BANK_OBS_SPACE, BANK_ACT_SPACE, {}),
+            "policy_supervisor": (None, SUPERVISOR_OBS_SPACE, SUPERVISOR_ACT_SPACE, {}),
+            "policy_economy": (None, ECONOMY_OBS_SPACE, ECONOMY_ACT_SPACE, {})
+        }
+        config = (
+            PPOConfig()
+            .environment(env=RLlibMacroEnv, env_config={"num_employees": 50, "num_firms": 5, "max_steps": 480})
+            .framework("torch")
+            .multi_agent(policies=policies, policy_mapping_fn=policy_mapping_fn)
+            .training(model={"fcnet_hiddens": [64, 64]})  # DONG QUYET DINH DE KHOP SHAPE CHECKPOINT
+            .resources(num_gpus=0)
+            .env_runners(num_env_runners=0)
+        )
+        return config.build_algo() if hasattr(config, "build_algo") else config.build()
+
     def _init_rllib_inference(self):
         """Khoi tao worker suy luan RLlib 0-runner va nap checkpoint moi nhat."""
         try:
             ray.init(ignore_reinit_error=True, include_dashboard=False)
-            policies = {
-                "policy_employee": (None, EMPLOYEE_OBS_SPACE, EMPLOYEE_ACT_SPACE, {}),
-                "policy_firm": (None, FIRM_OBS_SPACE, FIRM_ACT_SPACE, {}),
-                "policy_government": (None, GOVERNMENT_OBS_SPACE, GOVERNMENT_ACT_SPACE, {}),
-                "policy_bank": (None, BANK_OBS_SPACE, BANK_ACT_SPACE, {}),
-                "policy_supervisor": (None, SUPERVISOR_OBS_SPACE, SUPERVISOR_ACT_SPACE, {}),
-                "policy_economy": (None, ECONOMY_OBS_SPACE, ECONOMY_ACT_SPACE, {})
-            }
-            config = (
-                PPOConfig()
-                .environment(env=RLlibMacroEnv, env_config={"num_employees": 50, "num_firms": 5, "max_steps": 480})
-                .framework("torch")
-                .multi_agent(policies=policies, policy_mapping_fn=policy_mapping_fn)
-                .training(model={"fcnet_hiddens": [64, 64]})  # DONG QUYET DINH DE KHOP SHAPE CHECKPOINT
-                .resources(num_gpus=0)
-                .env_runners(num_env_runners=0)
-            )
-            self.algo = config.build_algo() if hasattr(config, "build_algo") else config.build()
-            
+            self.algo = self._build_fresh_algo()
+
             latest_cp = self._get_latest_checkpoint()
             if latest_cp:
                 self.load_checkpoint(latest_cp)
@@ -140,7 +159,7 @@ class SimulationController:
             self.algo = None
 
     def _get_latest_checkpoint(self) -> Optional[str]:
-        cp_dir = "be/checkpoint/training"
+        cp_dir = os.path.join("be/checkpoint", SCENARIO_NAME)
         if not os.path.exists(cp_dir):
             return None
         subdirs = [
@@ -169,7 +188,7 @@ class SimulationController:
             logger.info("[SERVER] Switched to Heuristic rule-based engine.")
             return True
 
-        cp_dir = "be/checkpoint/training"
+        cp_dir = os.path.join("be/checkpoint", SCENARIO_NAME)
         # BẢO MẬT: whitelist chính xác theo os.listdir() thay vì nối chuỗi trực
         # tiếp vào os.path.join(). checkpoint_name đến từ request của client --
         # nếu không kiểm tra, một giá trị là đường dẫn tuyệt đối (vd. "C:\\...")
@@ -196,7 +215,21 @@ class SimulationController:
             logger.info(f"[SERVER] Successfully loaded policy weights from: {target_path}")
             return True
         except Exception as exc:
-            logger.error(f"[SERVER] Failed to restore checkpoint {checkpoint_name}: {str(exc)}")
+            # algo.restore() khong atomic -- neu that bai giua chung, object
+            # self.algo co the da bi nhiem mot phan trang thai cu (optimizer
+            # state lech shape voi model moi). KHONG duoc tiep tuc dung lai no
+            # cho suy luan (co the sinh hanh dong sai lech am tham thay vi bao
+            # loi ro rang) -- build lai hoan toan moi va rot ve heuristic.
+            logger.error(
+                f"[SERVER] Failed to restore checkpoint {checkpoint_name}: {str(exc)}. "
+                f"Rebuilding a fresh algorithm instance and falling back to heuristic policy."
+            )
+            try:
+                self.algo.stop()
+            except Exception:
+                pass
+            self.algo = self._build_fresh_algo()
+            self.active_checkpoint = "heuristic"
             return False
 
     def apply_policy_shock(self, overrides: Dict[str, float]):
@@ -446,12 +479,13 @@ async def handle_control(req: ControlRequest):
 
 @app.get("/api/checkpoints", dependencies=[Depends(require_api_key)])
 async def list_checkpoints():
-    cp_dir = "be/checkpoint/training"
+    cp_dir = os.path.join("be/checkpoint", SCENARIO_NAME)
     available = []
     if os.path.exists(cp_dir):
         available = [d for d in os.listdir(cp_dir) if os.path.isdir(os.path.join(cp_dir, d))]
         available.sort(key=lambda d: os.path.getmtime(os.path.join(cp_dir, d)), reverse=True)
     return {
+        "scenario": SCENARIO_NAME,
         "checkpoints": available,
         "active": sim_controller.active_checkpoint or "heuristic"
     }
