@@ -1,8 +1,23 @@
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 import numpy as np
 from be.core.enums import LifeCycleStatus, AgentType
 from be.core.types import Observation, Action, ValidationResult, TransitionResult
 from be.agents.base_agent import BaseAgent
+
+
+def compute_npl_ratio_pct(non_performing_loans: float, total_loans: float) -> float:
+    """Ty le no xau (%), LUON trong [0, 100].
+
+    LOI DA SUA: cong thuc cu NPL / max(tong du no, 1) cho ra 471-482% (vuot 100%) khi so vay
+    xap xi 0 nhung no xau van dang "mo" trong cua so write-off (IFRS 9 staging) -- day la
+    hien tuong cua mau so, khong phai no xau 480%. Dinh nghia chuan Financial Soundness
+    Indicators cua IMF (IMF (2019), "Financial Soundness Indicators Compilation Guide") la
+    NPL / TONG DU NO GOP (gross loans, GOM ca no xau); o day total_loans co the da loai phan
+    no xau da ghi nhan mat, nen mau so = total_loans + NPL de tong du no gop >= NPL.
+    """
+    npl = max(0.0, float(non_performing_loans))
+    gross_loans = max(0.0, float(total_loans)) + npl
+    return 0.0 if gross_loans <= 0.0 else float(npl / gross_loans * 100.0)
 
 class Bank(BaseAgent):
     """
@@ -10,10 +25,26 @@ class Bank(BaseAgent):
     Quan ly thanh khoan, lai suat, tin dung va no xau toan he thong.
     Tuan thu nghiem ngat contract BaseAgent theo SAS v1.0.
     """
-    def __init__(self, agent_id: str):
+    def __init__(self, agent_id: str, npl_flow_penalty_coef: float = 0.06, npl_stock_penalty_coef: float = 50.0,
+                 npl_writeoff_months: int = 6):
         super().__init__(agent_id)
         self.agent_type = AgentType.BANK
-        
+
+        # He so hieu chinh reward (calibration constants, xem calculate_reward)
+        # -- co the cau hinh qua ScenarioConfig, KHONG doi dang ham reward.
+        # Truyen o constructor (giong Government) vi Bank duoc tao lai moi
+        # lan reset() (_create_world()).
+        self.npl_flow_penalty_coef: float = float(npl_flow_penalty_coef)
+        self.npl_stock_penalty_coef: float = float(npl_stock_penalty_coef)
+
+        # So thang mot khoan no xau duoc phep "dang mo" tren so sach truoc khi
+        # bi WRITE OFF (xem giai thich day du + trich dan tai apply_result).
+        # HE SO CAU TRUC TU DO HIEU CHINH.
+        self.npl_writeoff_months: int = int(npl_writeoff_months)
+        # Danh sach (so tien, thang phat sinh) cho tung DOT no xau con "song"
+        # tren so theo doi NPL -- can thiet de biet dot nao da qua han write-off.
+        self.npl_vintages: List[Tuple[float, int]] = []
+
         # Co cau tai san va nguon von
         self.reserves: float = 0.0
         self.total_deposits: float = 0.0
@@ -51,6 +82,7 @@ class Bank(BaseAgent):
         self.total_deposits = 0.0
         self.total_loans = 0.0
         self.non_performing_loans = 0.0
+        self.npl_vintages = []
         self.lending_rate = float(initial_lending_rate)
         self.deposit_rate = float(initial_deposit_rate)
         self.reserve_requirement_ratio = float(reserve_requirement_ratio)
@@ -161,9 +193,42 @@ class Bank(BaseAgent):
         # kênh loans_delta chung ở trên (bao gồm cả phần thu hồi được lẫn phần mất
         # trắng), nên KHÔNG được trừ trùng total_loans ở đây lần nữa.
         new_defaults = float(delta.get("new_defaults", 0.0))
-        self.non_performing_loans = float(max(0.0, self.non_performing_loans + new_defaults))
+        current_month = int(delta.get("current_month", 0))
+
+        if new_defaults > 0.0:
+            self.npl_vintages.append((new_defaults, current_month))
+
+        # GHI SỔ & KHÉP SỔ NỢ XẤU THEO THỜI GIAN (Write-off).
+        #
+        # Trước bản vá này, non_performing_loans là bộ đếm CHỈ TĂNG trong suốt
+        # một episode -- không ngân hàng thật nào giữ nguyên bad debt trên sổ
+        # sách vĩnh viễn. Tham chiếu: IFRS 9 (International Accounting
+        # Standards Board, 2014), "IFRS 9 Financial Instruments" -- khái niệm
+        # phân loại nợ "credit-impaired" (Stage 3) theo thời gian quá hạn; và
+        # Basel Committee on Banking Supervision (2017), "Prudential treatment
+        # of problem assets -- definitions of non-performing exposures and
+        # forbearance" -- thông lệ ngân hàng thực tế luôn có một mốc thời gian
+        # để chính thức WRITE OFF (khép sổ theo dõi) một khoản nợ xấu, dù thời
+        # hạn cụ thể khác nhau theo ngân hàng/quốc gia. npl_writeoff_months=6
+        # (mặc định) là HỆ SỐ CẤU TRÚC TỰ DO HIỆU CHỈNH -- chọn ở cận dưới
+        # khoảng thực tế để tạo áp lực write-off rõ ràng trong phạm vi 1
+        # episode (240 bước).
+        writeoff_cutoff_month = current_month - self.npl_writeoff_months
+        total_writeoff = sum(amt for amt, born in self.npl_vintages if born <= writeoff_cutoff_month)
+        self.npl_vintages = [(amt, born) for amt, born in self.npl_vintages if born > writeoff_cutoff_month]
+
+        self.non_performing_loans = float(max(0.0, self.non_performing_loans + new_defaults - total_writeoff))
         self.last_default_loss = new_defaults
 
+        # QUAN TRỌNG: write-off CHỈ trừ khỏi non_performing_loans (metric theo
+        # dõi/đầu vào reward) -- KHÔNG trừ reserves thêm lần nữa. Tổn thất tín
+        # dụng THẬT SỰ đã được ghi nhận DUY NHẤT MỘT LẦN ngay tại thời điểm vỡ
+        # nợ (dòng dưới đây), đúng tinh thần kế toán ngân hàng thật: một khoản
+        # nợ đã trích lập dự phòng đầy đủ (đã trừ reserves) thì write-off chỉ
+        # là thao tác khép sổ theo dõi, không tạo thêm tổn thất P&L. Trừ
+        # reserves thêm lần nữa ở đây sẽ ghi nhận TRÙNG cùng một khoản lỗ, vi
+        # phạm bảo toàn SFC (đã chạy lại be/tests/test_sfc_accounting.py để
+        # xác nhận thiết kế này không phá vỡ đẳng thức bảo toàn).
         if new_defaults > 0.0:
             self.reserves -= new_defaults  # ngân hàng chịu lỗ tín dụng thực sự
 
@@ -199,10 +264,10 @@ class Bank(BaseAgent):
              chỉ tránh tạo thêm nợ xấu mới trong đúng tháng đó.
         """
         net_interest_margin = (self.last_interest_income - self.last_interest_expense) * 0.01
-        npl_flow_penalty = self.last_default_loss * 0.06
+        npl_flow_penalty = self.last_default_loss * self.npl_flow_penalty_coef
 
         npl_ratio = self.non_performing_loans / max(self.total_loans, 1.0)
-        npl_stock_penalty = npl_ratio * 50.0
+        npl_stock_penalty = npl_ratio * self.npl_stock_penalty_coef
 
         # Phat neu du tru thuc te thap hon ty le bat buoc
         reserve_penalty = 0.0
@@ -234,6 +299,7 @@ class Bank(BaseAgent):
         self.total_deposits = 0.0
         self.total_loans = 0.0
         self.non_performing_loans = 0.0
+        self.npl_vintages = []
         self.lending_rate = 0.06
         self.deposit_rate = 0.02
         self.credit_expansion_factor = 1.0

@@ -69,13 +69,17 @@ class RuleEngine:
     dẫn chỉ xác lập DẠNG HÀM (functional form) của quan hệ kinh tế, không xác lập giá trị
     số cụ thể. Đây là thông lệ chuẩn trong hiệu chỉnh mô hình kinh tế tính toán.
     """
-    def __init__(self, event_bus: EventBus):
+    def __init__(self, event_bus: EventBus, subsistence_indexation_ceiling_mult: float = 3.0):
         self.event_bus: EventBus = event_bus
+        # Tran chi so hoa chi tieu sinh ton theo gia (boi so cua eco.initial_living_cost);
+        # HE SO HIEU CHINH on dinh so hoc, xem chu thich tai Section 4.
+        self.subsistence_indexation_ceiling_mult: float = float(subsistence_indexation_ceiling_mult)
 
-    def execute_cycle(self, 
-                      agents: Dict[str, BaseAgent], 
-                      validated_actions: Dict[str, Action], 
-                      timestep: int) -> Dict[str, TransitionResult]:
+    def execute_cycle(self,
+                      agents: Dict[str, BaseAgent],
+                      validated_actions: Dict[str, Action],
+                      timestep: int,
+                      max_steps: int = 999999) -> Dict[str, TransitionResult]:
         deltas: Dict[str, Dict[str, Any]] = {agent_id: {} for agent_id in agents.keys()}
         events_map: Dict[str, List[str]] = {agent_id: [] for agent_id in agents.keys()}
 
@@ -91,7 +95,6 @@ class RuleEngine:
         if gov_act is not None:
             deltas[gov.agent_id]["executed_worker_tax"] = float(gov_act.values[0])
             deltas[gov.agent_id]["executed_firm_tax"] = float(gov_act.values[1])
-            deltas[gov.agent_id]["executed_subsidy_ratio"] = float(gov_act.values[2])
             worker_tax_rate = float(gov_act.values[0])
             firm_tax_rate = float(gov_act.values[1])
         else:
@@ -113,6 +116,9 @@ class RuleEngine:
                 lr, dr, cf = float(b_act.values[0]), float(b_act.values[1]), float(b_act.values[2])
             else:
                 lr, dr, cf = b.lending_rate, b.deposit_rate, b.credit_expansion_factor
+            # current_month can thiet de Bank.apply_result tinh tuoi cac dot no
+            # xau (vintage) phuc vu co che write-off theo thoi gian.
+            deltas[b.agent_id]["current_month"] = timestep
             deltas[b.agent_id]["executed_lending_rate"] = lr
             deltas[b.agent_id]["executed_deposit_rate"] = dr
             deltas[b.agent_id]["executed_credit_factor"] = cf
@@ -178,7 +184,25 @@ class RuleEngine:
             safety_reserve = overhead_cost + (current_wage_bill * 1.1)
             available_liquidity = max(0.0, firm.cash - safety_reserve)
 
-            MAX_HIRES_PER_MONTH = 2
+            # Ma sát tuyển dụng > ma sát sa thải (search friction bất đối
+            # xứng) là hiện tượng thị trường lao động thật (Mortensen &
+            # Pissarides, 1994, "Job Creation and Job Destruction", Review of
+            # Economic Studies 61(3) -- đã trích ở env.py cho điều kiện gia
+            # nhập ngành). TRƯỚC đây trần tuyệt đối = 2 người/tháng bất kể quy
+            # mô firm, trong khi sa thải có thể xoá NGAY 50% quân số cùng lúc
+            # (xem num_to_fire bên dưới) -- độ lệch pha ~25 lần giữa 2 chiều
+            # là quá cực đoan để còn phản ánh đúng ma sát tìm việc thực tế
+            # (phát hiện qua audit thực nghiệm, không có cơ sở lý thuyết nào
+            # biện minh một trần TUYỆT ĐỐI không phụ thuộc quy mô firm). Đổi
+            # sang trần TƯƠNG ĐỐI theo quy mô hiện tại (HE SO CAU TRUC TU DO
+            # HIEU CHINH: 25%/tháng), có sàn 2 người để firm nhỏ/mới vẫn tuyển
+            # được tốc độ tối thiểu như cũ. Đây chỉ nới TRẦN CỨNG bổ sung --
+            # điều kiện khả năng chi trả THẬT (available_liquidity, kiểm tra
+            # từng ứng viên trong vòng lặp bên dưới) vẫn là ràng buộc chính,
+            # không đổi: firm không bao giờ tuyển vượt quá những gì nó trả nổi,
+            # vòng lặp tự dừng (break) ngay khi hết thanh khoản hoặc MRPL
+            # không còn biện minh được lương bảo lưu.
+            MAX_HIRES_PER_MONTH = max(2, int(np.ceil(0.25 * current_headcount)))
             hires_this_month = 0
 
             if available_liquidity > (expected_price * 1.2) and unemployed and hire_signal > -0.1:
@@ -290,24 +314,184 @@ class RuleEngine:
 
         # 4. TIÊU DÙNG & ĐỊNH GIÁ KẾT DÍNH CALVO CHUẨN (Calvo, 1983)
         total_consumer_spending = 0.0
+
+        # TRẦN CHỈ SỐ HOÁ CHI TIÊU SINH TỒN THEO GIÁ (ổn định số học).
+        # Chi tiêu sinh tồn danh nghĩa = QTY × giá kỳ trước là dạng Stone-Geary/LES
+        # (Stone, R. (1954), "Linear Expenditure Systems and Demand Analysis",
+        # Economic Journal 64(255)) -- giữ NGUYÊN dạng hàm. Nhưng kết hợp với
+        # instant_clearing_price = chi_tiêu/cung (Calvo, 1983, phần (1-θ)) thì tổng
+        # cầu danh nghĩa của những người đủ tiền tỷ lệ với P_{t-1}, nên hệ số khuếch
+        # đại một bước = θ + (1-θ)·0,83·N_đủ_tiền·QTY/cung_thực. ĐO THỰC NGHIỆM trên
+        # hệ thống đầy đủ (6 seed): gain ≈ 0,7 + 13,3/cung, vượt 1,0 khi sản xuất còn
+        # ~12-25% baseline; khi vượt, giá tăng cấp số nhân vô hạn (đo được giá 4e10 ở
+        # bước 240) -- kiểu bất ổn của thích nghi kỳ vọng (Cagan, P. (1956), "The
+        # Monetary Dynamics of Hyperinflation", trong Friedman (ed.), Studies in the
+        # Quantity Theory of Money, U. of Chicago Press). Lỗi tự sinh ngay cả khi tắt
+        # bơm cầu và trợ cấp (đã ablate).
+        # Sửa: phần CHỈ SỐ HOÁ theo giá được chặn ở TRẦN = mult × initial_living_cost.
+        # Trên trần, chi tiêu sinh tồn không còn phụ thuộc P_{t-1} nên hệ số trên
+        # P_{t-1} về đúng θ < 1 -> vòng lặp bị CẮT (không phải chỉ giới hạn tốc độ tăng
+        # kiểu ±x%/kỳ vốn chỉ làm chậm phân kỳ). Dưới trần hành vi Stone-Geary giữ
+        # nguyên. mult là HỆ SỐ HIỆU CHỈNH ổn định số học (không suy từ Stone/Cagan).
+        indexation_ceiling = self.subsistence_indexation_ceiling_mult * eco.initial_living_cost
+        indexed_price = min(expected_price, indexation_ceiling)
+
         for emp in active_employees:
             emp_act = validated_actions.get(emp.agent_id)
             consume_propensity = float(emp_act.values[2]) if emp_act is not None else 0.5
 
             current_cash_est = emp.cash + deltas[emp.agent_id].get("cash_delta", 0.0)
-            subsistence_nominal_need = SUBSISTENCE_BASKET_QTY * expected_price
+            subsistence_nominal_need = SUBSISTENCE_BASKET_QTY * indexed_price
 
-            if current_cash_est >= subsistence_nominal_need:
-                surplus_cash = current_cash_est - subsistence_nominal_need
+            # CHI TIÊU TỪ TÀI SẢN THANH KHOẢN (cash-on-hand = tiền mặt + tiền gửi).
+            # LỖI THIẾT KẾ ĐÃ SỬA: bản cũ chỉ tính chi tiêu trên TIỀN MẶT, trong khi
+            # Mục 8B chuyển mọi phần tiền mặt vượt đệm (2 tháng sinh hoạt phí) vào tiền
+            # gửi -- nên tiền gửi là "tiền chết", không bao giờ quay lại thị trường hàng
+            # hoá dù chính chú thích 8B nói tiền gửi là demand deposit thanh khoản hoàn
+            # toàn. Hệ quả đo được: chi tiêu hộ gia đình ~ hằng số theo đệm (≈1,2 × giá)
+            # bất kể thu nhập => quỹ lương 362 nhưng chi tiêu chỉ 232, doanh thu firm
+            # không bù nổi lương (tỷ lệ 0,57) => thuê luôn lỗ, sa thải hết luôn tối ưu.
+            # Cơ sở lý thuyết: trong mô hình tiết kiệm đệm (Carroll, C. D. (1997),
+            # "Buffer-Stock Saving and the Life-Cycle/Permanent Income Hypothesis", QJE
+            # 112(1)) tiêu dùng là hàm của CASH-ON-HAND, gồm mọi tài sản thanh khoản chứ
+            # không riêng tiền giao dịch; mô hình SFC chuẩn (Godley, W., & Lavoie, M.
+            # (2007), "Monetary Economics", Palgrave Macmillan, Ch.3-4) cũng để tiêu dùng
+            # phụ thuộc số dư tài sản tích luỹ V_{-1}. Dạng hàm chi tiêu (Stone-Geary +
+            # hệ số 0,35 × propensity) GIỮ NGUYÊN, chỉ đổi cơ sở tính từ tiền mặt sang
+            # cash-on-hand.
+            # SFC: phần chi vượt tiền mặt được RÚT từ tiền gửi (chuyển nội bộ trong khu
+            # vực hộ gia đình, tiền gửi giảm bao nhiêu thì tiền mặt tăng bấy nhiêu rồi chi
+            # cho khu vực sản xuất); ghi vào pre_spend_withdrawal để Mục 8B trừ khỏi số dư
+            # gửi đầu kỳ, và trừ vào deposits_delta của ĐÚNG ngân hàng đang giữ số dư.
+            deposit_now = max(0.0, getattr(emp, "bank_deposit", 0.0))
+            liquid_est = max(0.0, current_cash_est) + deposit_now
+
+            if liquid_est >= subsistence_nominal_need:
+                surplus_cash = liquid_est - subsistence_nominal_need
                 spending = subsistence_nominal_need + (surplus_cash * 0.35 * consume_propensity)
             else:
-                spending = max(0.0, current_cash_est)
+                spending = liquid_est
 
-            deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) - spending
+            pre_spend_withdrawal = min(deposit_now, max(0.0, spending - max(0.0, current_cash_est)))
+            deltas[emp.agent_id]["pre_spend_withdrawal"] = pre_spend_withdrawal
+            if pre_spend_withdrawal > 0.0:
+                depository = getattr(emp, "depository_bank_id", None)
+                if depository in bank_lookup:
+                    deltas[depository]["deposits_delta"] = deltas[depository].get("deposits_delta", 0.0) - pre_spend_withdrawal
+
+            deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) + pre_spend_withdrawal - spending
             deltas[emp.agent_id]["executed_consumption"] = spending
             total_consumer_spending += spending
 
             self._emit_event(EventType.GOODS_PURCHASED, emp.agent_id, eco.agent_id, {"amount": round(spending, 1)}, timestep)
+
+        # Chi tiêu của HỘ GIA ĐÌNH TRƯỚC khi cộng bơm cầu tài khoá -- dùng làm khối
+        # lượng giao dịch (total_market_turnover) cho reward của Economy. Cố ý KHÔNG
+        # gồm khoản bơm của chính Economy (Section 4B): nếu tính cả, Economy có thể
+        # tự nâng "khối lượng" thưởng cho mình bằng cách bơm tối đa (reward hacking).
+        household_consumer_spending = total_consumer_spending
+
+        # 4B. BƠM/RÚT CẦU TÀI KHÓA PHẢN CHU KỲ CỦA CHÍNH PHỦ QUA ECONOMY
+        # (Countercyclical Fiscal Demand Injection) -- Blanchard, O., &
+        # Perotti, R. (2002), "An Empirical Characterization of the Dynamic
+        # Effects of Changes in Government Spending and Taxes on Output",
+        # Quarterly Journal of Economics 117(4), 1329-1368.
+        #
+        # THIẾT KẾ LẠI hành động chiều [0] của Economy (trước là
+        # "living_cost_factor" nhân thẳng vào base_living_cost qua key
+        # executed_cost_factor -- key này KHÔNG BAO GIỜ được RuleEngine ghi
+        # nên hành động này LUÔN LÀ NO-OP, phát hiện qua audit hardcode
+        # formula). Phương án thay thế ban đầu được cân nhắc là "bơm thêm
+        # CUNG" (total_real_supply) nhưng bị loại vì SAI CHIỀU: bơm thêm cung
+        # trong khi cầu không đổi chỉ khiến instant_clearing_price =
+        # spending/supply giảm SÂU HƠN -- phản tác dụng đúng với vấn đề giảm
+        # phát cần giải quyết. Đòn bẩy đúng phải tác động qua phía CẦU, đúng
+        # cơ chế chi tiêu chính phủ phản chu kỳ chuẩn Keynes (G trong IS-LM).
+        #
+        # Quy mô bơm SCALE theo tổng cầu-sinh-tồn CƠ SỞ của dân số đang hoạt
+        # động (KHÔNG scale theo chính total_consumer_spending hiện tại) --
+        # nếu scale theo total_consumer_spending, trong khủng hoảng giảm
+        # phát/thất nghiệp khi spending đã co lại gần 0, lượng bơm cũng tiến
+        # về 0 theo, tự triệt tiêu đúng lúc cần dùng nhất.
+        #
+        # === LỖI VÒNG LẶP PHẢN HỒI DƯƠNG ĐÃ PHÁT HIỆN + SỬA (2026-09-21) ===
+        # Bản đầu tiên dùng "expected_price" (giá SỐNG, đang biến động mỗi kỳ)
+        # làm mốc quy đổi -- gây nổ số học thật trong lần train đầu tiên (GDP/
+        # Treasury vọt lên hàng trăm nghìn tỷ chỉ sau ~10 iteration). Nguyên
+        # nhân (phân tích loop-gain): market_clearing_price = θ·expected_price
+        # + (1-θ)·instant_clearing_price, và instant_clearing_price chứa
+        # demand_injection_base ∝ expected_price -- khiến hệ số nhân lên
+        # expected_price kỳ trước = θ + (1-θ)·ratio·SUBSISTENCE_QTY·N/supply.
+        # Hệ số này VƯỢT 1 (phân kỳ) khi SUBSISTENCE_QTY·N/supply > 1/ratio --
+        # đúng lúc thất nghiệp cao (supply co lại vì ít người sản xuất) trong
+        # khi N (khi đó là toàn bộ dân số) không co theo -- nghịch lý: cơ chế
+        # sinh ra để chống khủng hoảng thất nghiệp lại mất ổn định NHẤT đúng
+        # lúc thất nghiệp cao. Thêm trần %/kỳ (kiểu ±10%) KHÔNG giải quyết được
+        # gốc rễ -- chỉ làm chậm quá trình phân kỳ (vd. ±10%/kỳ vẫn cho ra
+        # 1.1^100 ≈ 13,781 lần sau 100 kỳ nếu hệ số nhân thật > 1.10).
+        #
+        # SỬA TẬN GỐC: (1) neo bằng "initial_living_cost" -- hằng số CỐ ĐỊNH
+        # chụp tại lúc reset episode (economy.py), hoàn toàn KHÔNG phụ thuộc
+        # expected_price đang chạy -- loại bỏ P_{t-1} khỏi vế injection, đưa
+        # hệ số nhân về ĐÚNG θ=0.70 < 1, ổn định vô điều kiện bất kể N/supply/
+        # ratio (verify bằng test_injection_loop_gain.py, đo trực tiếp đạo hàm
+        # số học ở nhiều mốc thất nghiệp). (2) đổi N từ "toàn bộ dân số hoạt
+        # động" sang SỐ NGƯỜI THẤT NGHIỆP (unemployed_emps, đã tính ở trên) --
+        # đúng bản chất kinh tế của cơ chế: đây là khoản cứu trợ/kích cầu bù
+        # đắp thu nhập bị MẤT do thất nghiệp (Blanchard & Perotti, 2002),
+        # không phải trợ cấp đồng đều theo đầu người bất kể có việc hay không
+        # -- quy mô bơm tự động tăng đúng lúc cần (thất nghiệp cao), giảm về 0
+        # khi toàn dụng lao động, đúng tính chất automatic stabilizer.
+        eco_act = validated_actions.get(eco.agent_id)
+        # Action đã được Economy.validate_action() clip vào [-0.20, 0.20],
+        # không clip lại ở đây (tránh trùng lặp logic biên).
+        demand_injection_ratio = float(eco_act.values[0]) if eco_act is not None else 0.0
+        demand_injection_base = SUBSISTENCE_BASKET_QTY * eco.initial_living_cost * max(1, len(unemployed_emps))
+        total_consumer_spending_after_injection = max(0.0, total_consumer_spending + (demand_injection_ratio * demand_injection_base))
+        # Chênh lệch THỰC TẾ (sau khi kẹp sàn 0) là số tiền Kho bạc phải chi
+        # trả (bơm dương -> firm/khu vực phi chính thức nhận thêm doanh thu)
+        # hoặc thu về (bơm âm -> thắt chi tiêu) -- đảm bảo đẳng thức SFC: phần
+        # cầu tăng/giảm thêm PHẢI có nguồn đối ứng ở Treasury (xem
+        # Government.apply_result), không tự sinh/mất tiền.
+        demand_injection_effect = total_consumer_spending_after_injection - total_consumer_spending
+        total_consumer_spending = total_consumer_spending_after_injection
+        deltas[eco.agent_id]["demand_injection_ratio"] = demand_injection_ratio
+        deltas[eco.agent_id]["demand_injection_effect"] = demand_injection_effect
+        deltas[gov.agent_id]["demand_injection_cost"] = deltas[gov.agent_id].get("demand_injection_cost", 0.0) + demand_injection_effect
+
+        # 4C. CHI TIÊU MUA HÀNG CỦA CHÍNH PHỦ (Government Purchases, G) -- ĐÓNG VÒNG CHU CHUYỂN.
+        # Mô hình SFC tối giản SIM (Godley, W., & Lavoie, M. (2007), "Monetary Economics",
+        # Palgrave Macmillan, Ch.3) đóng vòng chu chuyển bằng đúng bước này: Chính phủ thu
+        # thuế T rồi CHI MUA HÀNG HOÁ G, nên tiền thuế quay lại doanh nghiệp (Y = C + G).
+        # Mô hình này thiếu G: thuế chảy vào Kho bạc rồi nằm im (chỉ có trợ cấp thất nghiệp
+        # và bơm cầu ±20% cỡ nhỏ), khiến doanh thu firm không bù nổi quỹ lương (đo được tỷ lệ
+        # 0,57) và chính sách học được là SA THẢI HẾT (reward Firm -0,17 thắng THUÊ -0,59; xem
+        # CLAUDE_HISTORY.md v0.16). Xem thêm Section 3-4: chỉ đóng vòng khi kết hợp với chi
+        # tiêu từ tài sản thanh khoản ở trên (đo: riêng G hay riêng L đều CHƯA đủ, L+G thì
+        # thuê thắng sa thải, giá ổn định ~16-17, 5/5 firm sống sót).
+        #
+        # CHI CHO AI, TIỀN ĐI ĐÂU: Chính phủ mua hàng trên THỊ TRƯỜNG chung: khoản G cộng vào
+        # tổng cầu total_consumer_spending và được chia cho người sản xuất THEO TỶ TRỌNG SẢN
+        # LƯỢNG THỰC như mọi khoản chi khác (industrial_revenue_pool / informal_revenue_pool
+        # ở dưới) -- nên firm sản xuất nhiều hơn nhận nhiều hơn, KHÔNG phải trợ cấp vô điều
+        # kiện gắn với hiện diện của firm. Tiền đi: Kho bạc -> doanh thu firm / thu nhập phi
+        # chính thức của người sản xuất (chuyển giữa hai khu vực, bảo toàn SFC; phần này lại
+        # chịu thuế thu nhập ở Mục 6 nên một phần quay về Kho bạc kỳ sau).
+        # BAO NHIÊU: G_t = ρ_t × (thuế + tiền phạt kỳ TRƯỚC), ρ ∈ [0,1] là hành động của
+        # Chính phủ (chiều [2]), mặc định 1 = ngân sách cân bằng (SIM: G = T). Dùng số thu
+        # kỳ trước vì thuế kỳ này chỉ được tính SAU khi chi tiêu đã chốt (Mục 6 chạy sau
+        # Mục 4); đây cũng là độ trễ chuẩn trong SFC. G tự co lại khi sản xuất/việc làm sụp
+        # đổi (thuế giảm) nên KHÔNG thưởng cho việc ngừng sản xuất. G bị chặn trần bằng số dư
+        # Kho bạc hiện có (không chi vượt quỹ, không tự tạo nợ công/tiền). ρ bị giới hạn
+        # ≤ 1 nên G/GDP tự xuất hiện ~ tỷ lệ thuế/GDP (đo được 10-23%, trung bình ~15%, nằm
+        # trong khoảng 15-25% GDP của chi tiêu chính phủ các nền kinh tế theo dữ liệu World
+        # Bank -- KHÔNG được chỉnh cho khớp).
+        purchase_ratio = float(gov_act.values[2]) if gov_act is not None else 1.0
+        purchase_base = max(0.0, gov.last_tax_collected + gov.last_fines_collected)
+        government_purchases = min(purchase_ratio * purchase_base, max(0.0, gov.treasury))
+        total_consumer_spending += government_purchases
+        deltas[gov.agent_id]["government_purchase_cost"] = government_purchases
+        deltas[gov.agent_id]["executed_purchase_ratio"] = purchase_ratio
 
         # CÂN BẰNG GIÁ CALVO (Calvo, 1983 Staggered Price Setting):
         # P*_t: Giá cân bằng Walras tức thời nếu 100% doanh nghiệp đổi giá
@@ -349,6 +533,11 @@ class RuleEngine:
         eco.inflation_rate = calvo_inflation
         eco.base_living_cost = float(actual_living_cost)
         deltas[eco.agent_id]["liquidity_delta"] = total_consumer_spending
+        # KHOÁ NÀY ĐÃ BỊ XOÁ NHẦM ở commit 3243cbd (13/9) khi refactor rule_engine, trong
+        # khi Economy.apply_result vẫn đọc nó -> step_trade_volume ≡ 0, obs[5] ≡ 0 và
+        # thành phần thưởng "khối lượng thực" của Economy chết (reward luôn ≤ 0).
+        # Khôi phục: khối lượng danh nghĩa giao dịch của hộ gia đình (xem trên).
+        deltas[eco.agent_id]["total_market_turnover"] = household_consumer_spending
         deltas[eco.agent_id]["inflation"] = calvo_inflation
         deltas[eco.agent_id]["base_living_cost"] = actual_living_cost
         # Khấu hao tư bản (overhead, Jorgenson 1963) là chi phí thực bị TRỪ khỏi
@@ -369,6 +558,13 @@ class RuleEngine:
             deltas[emp.agent_id]["energy_delta"] = deltas[emp.agent_id].get("energy_delta", 0.0) - min(0.08, 0.02 * streak)
 
             current_cash_est = emp.cash + deltas[emp.agent_id].get("cash_delta", 0.0)
+            # Điều kiện đủ điều kiện nhận trợ cấp xét theo TÀI SẢN THANH KHOẢN (tiền mặt +
+            # số dư gửi còn lại sau khi đã rút để chi tiêu, xem Mục 4): nếu chỉ xét tiền mặt,
+            # hộ gia đình vừa chi tiêu từ tiền gửi (tiền mặt ~0) sẽ bị coi nhầm là nghèo và
+            # nhận trợ cấp dù còn tiền gửi lớn.
+            current_cash_est = current_cash_est + max(
+                0.0, getattr(emp, "bank_deposit", 0.0) - deltas[emp.agent_id].get("pre_spend_withdrawal", 0.0)
+            )
             if current_cash_est < (0.8 * actual_living_cost) and gov.treasury > 1000.0:
                 # Trợ cấp giảm dần theo thời gian thất nghiệp (Benefit Cliff)
                 relief_amount = 0.40 * actual_living_cost if streak <= 3 else (0.15 * actual_living_cost if streak <= 6 else 0.0)
@@ -683,7 +879,11 @@ class RuleEngine:
 
         for emp in active_employees:
             current_cash_est = emp.cash + deltas[emp.agent_id].get("cash_delta", 0.0)
-            old_deposit = getattr(emp, "bank_deposit", 0.0)
+            # Số dư gửi đầu kỳ SAU khi trừ phần đã rút để chi tiêu ở Mục 4 (pre_spend_
+            # withdrawal): lãi và tái cân bằng tính trên số dư còn lại; deposit_delta cuối
+            # cùng cũng phải trừ khoản rút này để Employee.apply_result khớp.
+            pre_spend_withdrawal = deltas[emp.agent_id].get("pre_spend_withdrawal", 0.0)
+            old_deposit = getattr(emp, "bank_deposit", 0.0) - pre_spend_withdrawal
 
             existing_depository = getattr(emp, "depository_bank_id", None)
             if existing_depository not in bank_lookup or old_deposit <= 0.0:
@@ -735,7 +935,7 @@ class RuleEngine:
                 deposit_flow = -withdrawal
 
             deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) - deposit_flow
-            deltas[emp.agent_id]["deposit_delta"] = deposit_interest + deposit_flow
+            deltas[emp.agent_id]["deposit_delta"] = deposit_interest + deposit_flow - pre_spend_withdrawal
 
             # Tổng biến động tiền gửi/lãi phải trả được hạch toán vào ĐÚNG ngân
             # hàng đang giữ số dư của người này (cộng dồn qua nhiều hộ gia đình).
@@ -763,6 +963,30 @@ class RuleEngine:
             if (projected_energy <= 0.0) or (projected_cash < debt_survival_limit and projected_energy < 0.15) or ((emp.age + deltas[emp.agent_id]["age_increment"]) >= emp.max_age):
                 new_deaths += 1
                 deltas[emp.agent_id]["status"] = LifeCycleStatus.DECEASED
+
+                # HÌNH PHẠT TỬ VONG QUY MÔ THEO "QUÃNG ĐỜI CÒN LẠI" (Age/Horizon
+                # -scaled Death Penalty) -- lấy cảm hứng từ Value of Statistical
+                # Life literature (Viscusi, W.K., & Aldy, J.E. (2003), "The
+                # Value of a Statistical Life: A Critical Review of Market
+                # Estimates Throughout the World", Journal of Risk and
+                # Uncertainty 27(1), 5-76; Aldy, J.E., & Viscusi, W.K. (2008),
+                # "Adjusting the Value of a Statistical Life for Age and
+                # Cohort Effects", Review of Economics and Statistics 90(3)):
+                # VSL literature xác nhận HƯỚNG tác động (agent càng trẻ, mất
+                # mát kỳ vọng càng lớn), KHÔNG cho ra bất kỳ tỷ lệ % cụ thể nào
+                # -- tỷ lệ nhân cụ thể dùng ở Employee.calculate_reward() là hệ
+                # số cấu trúc TỰ DO HIỆU CHỈNH riêng của dự án (xem
+                # ScenarioConfig.death_penalty_horizon_multiplier), không suy
+                # ra trực tiếp từ 2 nguồn trên (2 nguồn đó ước lượng VSL bằng
+                # USD thực, không đưa ra tỷ lệ). "Quãng đời còn lại" bị chặn
+                # bởi CẢ tuổi thọ sinh học (max_age) LẪN số bước còn lại của
+                # chính episode đang chạy -- không dùng thẳng toàn bộ tuổi thọ
+                # còn lại (vô nghĩa để phạt cho phần đời nằm ngoài episode).
+                final_age = emp.age + deltas[emp.agent_id]["age_increment"]
+                remaining_years_by_age = max(0.0, float(emp.max_age - final_age))
+                remaining_years_by_episode = max(0.0, (float(max_steps) - float(timestep)) / 12.0)
+                remaining_horizon = min(remaining_years_by_age, remaining_years_by_episode)
+                deltas[emp.agent_id]["death_remaining_horizon_ratio"] = remaining_horizon / max(1.0, float(emp.max_age))
 
                 emp_firm = deltas[emp.agent_id].get("employed_by", emp.employed_by)
                 if emp_firm and emp_firm in deltas:
@@ -794,6 +1018,15 @@ class RuleEngine:
         ]
         deltas[gov.agent_id]["current_gini"] = self._compute_gini_with_negatives(active_wealths)
         deltas[gov.agent_id]["current_gdp"] = total_industrial_revenue + total_informal_revenue
+        # GDP THỰC = GDP danh nghĩa / chỉ số giá (giá sinh hoạt so với mốc ban đầu cố định).
+        # Phần thưởng của Chính phủ phải dựa trên đại lượng THỰC: dùng GDP danh nghĩa thì
+        # siêu lạm phát tự nó được thưởng (đo được: reward Chính phủ 80,68/bước ở chế độ siêu
+        # lạm phát so với 8,54 ở chế độ lành mạnh, trong khi GDP thực 101 so với 7.513).
+        # Khái niệm "volume measure" = giá trị danh nghĩa khử giá: United Nations et al.
+        # (2009), "System of National Accounts 2008", Ch.15; cùng nguyên lý real-vs-nominal
+        # (Hicks, 1946) đã dùng cho reward của Economy.
+        price_index = max(1e-6, actual_living_cost / max(1e-9, eco.initial_living_cost))
+        deltas[gov.agent_id]["current_real_gdp"] = (total_industrial_revenue + total_informal_revenue) / price_index
 
         # 10. ĐÓNG GÓI CHUYỂN DỊCH
         results: Dict[str, TransitionResult] = {}

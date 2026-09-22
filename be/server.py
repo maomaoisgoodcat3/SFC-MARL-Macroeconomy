@@ -6,7 +6,6 @@ import secrets
 from typing import Dict, Any, List, Optional
 import numpy as np
 import ray
-from ray.rllib.algorithms.ppo import PPOConfig
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,16 +15,8 @@ from pydantic import BaseModel
 from be.core.enums import LifeCycleStatus
 from be.env import MacroEnvironment
 from be.logger import InstitutionalLogger
-from be.rllib_wrapper import (
-    RLlibMacroEnv,
-    policy_mapping_fn,
-    EMPLOYEE_OBS_SPACE, EMPLOYEE_ACT_SPACE,
-    FIRM_OBS_SPACE, FIRM_ACT_SPACE,
-    GOVERNMENT_OBS_SPACE, GOVERNMENT_ACT_SPACE,
-    BANK_OBS_SPACE, BANK_ACT_SPACE,
-    SUPERVISOR_OBS_SPACE, SUPERVISOR_ACT_SPACE,
-    ECONOMY_OBS_SPACE, ECONOMY_ACT_SPACE
-)
+from be.scenario_config import ScenarioConfig
+from be.rllib_wrapper import policy_mapping_fn, build_ppo_config
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(asctime)s - %(message)s")
 logger = logging.getLogger("InstitutionalEconomist.Server")
@@ -70,6 +61,13 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API
 # phuc vu dashboard cho mot kich ban calibration khac (vd. high_tax, low_reg).
 SCENARIO_NAME = os.environ.get("AI_ECONOMIST_SCENARIO", "training")
 
+# Duong dan (tuy chon) toi 1 file YAML ScenarioConfig (xem be/scenario_config.py)
+# de dashboard chay dung tham so calibration cua mot kich ban cu the -- vd.
+# AI_ECONOMIST_CONFIG=scenarios/em_baseline.yaml. Bo qua bien nay = dung dung
+# gia tri mac dinh hardcode nhu truoc (50 employee/5 firm/1 bank/480 step),
+# khong co thay doi ngam an nao.
+CONFIG_PATH = os.environ.get("AI_ECONOMIST_CONFIG")
+
 # CORS: KHÔNG dùng wildcard "*" kết hợp allow_credentials=True (kết hợp này bị
 # chính đặc tả CORS/trình duyệt coi là cấu hình không an toàn). Chỉ cho phép
 # các origin tường minh -- mặc định là host chạy chính server này; có thể mở
@@ -100,7 +98,12 @@ if os.path.exists("fe/assets"):
 class SimulationController:
     """Dieu phoi mo phong va suy luan trong so PPO Checkpoint."""
     def __init__(self):
-        self.env: MacroEnvironment = MacroEnvironment(num_employees=50, num_firms=5, num_banks=1, max_steps=480)
+        if CONFIG_PATH:
+            self.scenario = ScenarioConfig.from_yaml(CONFIG_PATH)
+            logger.info(f"[SERVER] Loaded ScenarioConfig from AI_ECONOMIST_CONFIG={CONFIG_PATH}")
+        else:
+            self.scenario = ScenarioConfig(num_employees=50, num_firms=5, num_banks=1, max_steps=480)
+        self.env: MacroEnvironment = MacroEnvironment(**self.scenario.to_env_kwargs())
         self.logger: InstitutionalLogger = InstitutionalLogger(flush_interval=50)
         self.is_running: bool = False
         self.speed_delay: float = 0.2
@@ -126,22 +129,10 @@ class SimulationController:
         (vd. optimizer state cua checkpoint cu bi nap mot phan vao model moi),
         nen KHONG duoc tiep tuc dung lai object algo cu sau mot lan restore
         loi; phai build moi hoan toan (cung loi da vay o be/main.py)."""
-        policies = {
-            "policy_employee": (None, EMPLOYEE_OBS_SPACE, EMPLOYEE_ACT_SPACE, {}),
-            "policy_firm": (None, FIRM_OBS_SPACE, FIRM_ACT_SPACE, {}),
-            "policy_government": (None, GOVERNMENT_OBS_SPACE, GOVERNMENT_ACT_SPACE, {}),
-            "policy_bank": (None, BANK_OBS_SPACE, BANK_ACT_SPACE, {}),
-            "policy_supervisor": (None, SUPERVISOR_OBS_SPACE, SUPERVISOR_ACT_SPACE, {}),
-            "policy_economy": (None, ECONOMY_OBS_SPACE, ECONOMY_ACT_SPACE, {})
-        }
-        config = (
-            PPOConfig()
-            .environment(env=RLlibMacroEnv, env_config={"num_employees": 50, "num_firms": 5, "max_steps": 480})
-            .framework("torch")
-            .multi_agent(policies=policies, policy_mapping_fn=policy_mapping_fn)
-            .training(model={"fcnet_hiddens": [64, 64]})  # DONG QUYET DINH DE KHOP SHAPE CHECKPOINT
-            .resources(num_gpus=0)
-            .env_runners(num_env_runners=0)
+        # CUNG mot bo dung PPOConfig/chinh sach voi be/main.py (train) -- xem
+        # build_ppo_config trong rllib_wrapper.py. Khac duy nhat: 0 worker (suy luan).
+        config = build_ppo_config(
+            self.scenario.to_env_kwargs(), num_env_runners=0, with_callbacks=False
         )
         return config.build_algo() if hasattr(config, "build_algo") else config.build()
 
@@ -294,8 +285,12 @@ class SimulationController:
             if self.algo is not None and self.active_checkpoint and self.active_checkpoint != "heuristic":
                 try:
                     pid = policy_mapping_fn(agent_id)
+                    # Quan sat DA lam sach bang CUNG ham ma env.step()/reset() dung
+                    # de tao quan sat luc TRAIN (be/env.py::observe_agent) -- policy
+                    # suy luan phai thay dung nhung gi no thay khi hoc (truoc day
+                    # dung agent_obs.vector tho, khong nan_to_num).
                     act = self.algo.compute_single_action(
-                        observation=agent_obs.vector,
+                        observation=self.env.observe_agent(agent_id, raw_state),
                         policy_id=pid,
                         explore=False
                     )

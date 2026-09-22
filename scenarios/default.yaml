@@ -1,0 +1,69 @@
+# scenarios/default.yaml
+# ==============================================================================
+# Kich ban MAC DINH -- gia tri o day KHOP DUNG voi hang so hardcode truoc khi
+# co ScenarioConfig (be/scenario_config.py). Dung file nay (hoac bo qua
+# --config hoan toan) cho hanh vi giong het cac phien train/simulate truoc
+# day -- khong co thay doi ngam an nao.
+#
+# Moi tham so co chu thich nguon/ly do hieu chinh ngay canh no. Day la HE SO
+# CAU TRUC (calibration constants) -- duoc tu do dieu chinh de phu hop du an,
+# KHONG PHAI cong thuc/dang ham kinh te (nhung thu do phai bam sat trich dan
+# hoc thuat trong rule_engine.py va khong doi qua ScenarioConfig).
+# ==============================================================================
+
+# --- Quy mo dan so & thoi luong episode ---
+num_employees: 50
+num_firms: 5
+num_banks: 1
+max_steps: 240
+
+# --- Nhan khau hoc noi sinh ---
+# Epstein & Axtell (1996), "Growing Artificial Societies: Social Science from
+# the Bottom Up", Brookings Institution Press / MIT Press -- co che sinh san
+# Sugarscape (tuoi + "sugar" toi thieu -> sinh san, con ke thua tai san + gen
+# co dot bien). Xem be/env.py Section A de biet day du boi canh + ly do
+# KHONG dung Neural MMO lam nguon trich dan (da xac minh khong phu hop).
+inheritance_fraction: 0.15          # ty le tai san cha/me chuyen cho con
+min_newborn_cash: 500.0             # san an sinh toi thieu newborn (Kho bac bu them neu thieu)
+min_reproduction_age: 22            # tuoi lao dong da on dinh
+max_reproduction_age: 45            # can tren do tuoi sinh san con nang dong kinh te
+min_reproduction_wealth_mult: 3.0   # so thang chi phi song can du tich luy ("sugar")
+trait_mutation_sigma: 0.05          # do lech chuan dot bien Gaussian quanh dac diem di truyen
+hard_min_emp: 30                    # san dan so -- kich hoat luoi an sinh khan cap (bien phap ky thuat, KHONG phai mo phong nhan khau hoc that)
+hard_max_emp: 200                   # tran dan so cho phep
+
+# --- Ngan hang: lai suat khoi tao (QUY UOC annual/nam -- rule_engine.py chia
+# cho 12.0 truoc khi ap dung theo thang, xem bank.py) ---
+initial_lending_rate: 0.06          # 6%/nam
+initial_deposit_rate: 0.02          # 2%/nam
+
+# --- He so hieu chinh reward (KHONG doi dang ham reward, chi doi hang so) ---
+# Government.calculate_reward:
+gini_penalty_coef: 25.0             # phat Gini^2 -- nang tu 10 sau khi quan sat Gini bat dong 0.80-0.86 qua nhieu lan train
+death_penalty_coef: 20.0            # phat moi ca tu vong -- nang tu 5 sau khi phat hien nghi van "survivorship bias" trong reward trung binh
+# Bank.calculate_reward:
+npl_flow_penalty_coef: 0.06         # phat no xau MOI phat sinh -- nang tu 0.02 (truoc do NPL tang tuyen tinh khong bao hoa)
+npl_stock_penalty_coef: 50.0        # phat theo TY LE ton kho NPL/tong du no (moi, chan ap luc lien tuc thay vi chi tranh no xau MOI)
+npl_writeoff_months: 6               # so thang no xau duoc "mo" truoc khi write-off (IFRS 9 staging / Basel NPL guidance -- xem bank.py apply_result)
+# Employee.calculate_reward:
+emp_death_penalty_base: 100.0                 # muc phat tu vong goc (ratio=0, chet dung luc max_age)
+emp_death_penalty_horizon_multiplier: 1.0     # he so nhan them theo ty le quang doi con lai (Viscusi & Aldy VSL) -- gia tri THAN TRONG ban dau, can hieu chinh lai bang du lieu training thuc sau khi cac fix khac (NPL write-off, headcount bonus gating, hire cap) da chay, xem rule_engine.py Section 9
+
+# --- Chuan hoa reward theo loai tac tu (MacroEnvironment._finalize_reward) ---
+# Dua |return| chiet khau (gamma=0.99) p90 cua moi policy ve ~20 (< sqrt(vf_clip_param)) de
+# critic PPO hoc duoc; suy tu phan phoi return DO DUOC duoi policy ngau nhien. Nhan reward
+# voi hang so KHONG doi thu tu uu tien hanh vi (advantage duoc chuan hoa moi batch).
+# Trich dan: Engstrom et al. (2020) ICLR; Andrychowicz et al. (2021) ICLR; van Hasselt et al.
+# (2016) NeurIPS. HE SO HIEU CHINH cua du an, khong phai cong thuc.
+reward_scale_employee: 0.045
+reward_scale_firm: 0.018
+reward_scale_government: 0.04
+reward_scale_bank: 0.04
+reward_scale_supervisor: 0.012
+reward_scale_economy: 0.02
+reward_clip: 100.0                  # env TU CHOI cau hinh nho hon hinh phat tu vong toi da sau chuan hoa
+
+# --- Tran chi so hoa chi tieu sinh ton theo gia (rule_engine.py Section 4) ---
+# Boi so cua initial_living_cost. Tren tran, he so khuech dai vong lap gia ve dung theta=0,70
+# (Calvo, 1983) => cat phan ky kieu Cagan (1956); duoi tran giu nguyen Stone-Geary (Stone, 1954).
+subsistence_indexation_ceiling_mult: 3.0

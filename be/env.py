@@ -1,16 +1,35 @@
 from typing import Dict, Any, Tuple, Optional, List
 import numpy as np
-from be.core.enums import LifeCycleStatus, EventType
+from be.core.enums import LifeCycleStatus, EventType, AgentType
 from be.core.event import Event, EventBus
 from be.core.types import Action, TransitionResult, ValidationResult
 from be.agents.base_agent import BaseAgent
 from be.agents.employee import Employee
 from be.agents.firm import Firm
 from be.agents.government import Government
-from be.agents.bank import Bank
+from be.agents.bank import Bank, compute_npl_ratio_pct
 from be.agents.supervisor import Supervisor
 from be.agents.economy import Economy
 from be.rule_engine import RuleEngine
+
+
+# ==============================================================================
+# LOP LAM SACH DAU VAO/DAU RA -- MOT NGUON DUY NHAT cho moi duong chay
+# ==============================================================================
+# Truoc day cac buoc nay nam RIENG trong be/rllib_wrapper.py (chi duong TRAIN di
+# qua), con be/main.py --mode simulate va be/server.py goi thang env.step() KHONG
+# qua lop nay -- nghia la train va simulate xu ly NaN/Inf/reward KHAC NHAU. Dat
+# vao day de moi tac nhan goi MacroEnvironment (RLlib wrapper, simulate, server,
+# test) nhan DUNG CUNG mot logic.
+def sanitize_observation(vec: np.ndarray) -> np.ndarray:
+    """NaN -> 0, +-Inf -> +-1000 (chan lan truyen so hoc xau vao mang no-ron)."""
+    return np.nan_to_num(np.asarray(vec, dtype=np.float32), nan=0.0, posinf=1000.0, neginf=-1000.0).astype(np.float32)
+
+
+def sanitize_action(vals: np.ndarray) -> np.ndarray:
+    """NaN -> 0, +-Inf -> +-1 (chan hanh dong hong tu policy truoc validate_action)."""
+    return np.nan_to_num(np.asarray(vals, dtype=np.float32), nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32)
+
 
 class MacroEnvironment:
     """
@@ -30,15 +49,104 @@ class MacroEnvironment:
        -> Vận tốc lưu thông tiền tệ V = GDP / M2 trong tensor quan sát vĩ mô.
     -------------------------------------------------------------------------
     """
-    def __init__(self, num_employees: int = 50, num_firms: int = 5, num_banks: int = 1, max_steps: int = 240):
+    def __init__(self, num_employees: int = 50, num_firms: int = 5, num_banks: int = 1, max_steps: int = 240,
+                 inheritance_fraction: float = 0.15, min_newborn_cash: float = 500.0,
+                 min_reproduction_age: int = 22, max_reproduction_age: int = 45,
+                 min_reproduction_wealth_mult: float = 3.0, trait_mutation_sigma: float = 0.05,
+                 hard_min_emp: int = 30, hard_max_emp: int = 200,
+                 initial_lending_rate: float = 0.06, initial_deposit_rate: float = 0.02,
+                 gini_penalty_coef: float = 25.0, death_penalty_coef: float = 20.0,
+                 npl_flow_penalty_coef: float = 0.06, npl_stock_penalty_coef: float = 50.0,
+                 npl_writeoff_months: int = 6,
+                 emp_death_penalty_base: float = 100.0,
+                 emp_death_penalty_horizon_multiplier: float = 1.0,
+                 reward_scale_employee: float = 0.045, reward_scale_firm: float = 0.018,
+                 reward_scale_government: float = 0.04, reward_scale_bank: float = 0.04,
+                 reward_scale_supervisor: float = 0.012, reward_scale_economy: float = 0.02,
+                 reward_clip: float = 100.0,
+                 subsistence_indexation_ceiling_mult: float = 3.0):
         self.num_employees: int = num_employees
         self.num_firms: int = num_firms
         self.num_banks: int = max(1, num_banks)
         self.max_steps: int = max_steps
         self.timestep: int = 0
+        self.births_this_step: int = 0
+
+        # Toan bo tham so ben duoi la HE SO CAU TRUC TU DO HIEU CHINH -- gia
+        # tri mac dinh khop DUNG voi gia tri hardcode truoc khi co
+        # ScenarioConfig (be/scenario_config.py), nen KHONG dung file cau
+        # hinh nao van cho hanh vi giong het truoc day. Xem chi tiet trich
+        # dan tung tham so tai noi su dung (Section A cua step() cho nhan
+        # khau hoc, Government/Bank.calculate_reward cho he so reward).
+        self.inheritance_fraction: float = float(inheritance_fraction)
+        self.min_newborn_cash: float = float(min_newborn_cash)
+        self.min_reproduction_age: int = int(min_reproduction_age)
+        self.max_reproduction_age: int = int(max_reproduction_age)
+        self.min_reproduction_wealth_mult: float = float(min_reproduction_wealth_mult)
+        self.trait_mutation_sigma: float = float(trait_mutation_sigma)
+        self.hard_min_emp: int = int(hard_min_emp)
+        self.hard_max_emp: int = int(hard_max_emp)
+        self.initial_lending_rate: float = float(initial_lending_rate)
+        self.initial_deposit_rate: float = float(initial_deposit_rate)
+        self.gini_penalty_coef: float = float(gini_penalty_coef)
+        self.death_penalty_coef: float = float(death_penalty_coef)
+        self.npl_flow_penalty_coef: float = float(npl_flow_penalty_coef)
+        self.npl_stock_penalty_coef: float = float(npl_stock_penalty_coef)
+        self.npl_writeoff_months: int = int(npl_writeoff_months)
+        self.emp_death_penalty_base: float = float(emp_death_penalty_base)
+        self.emp_death_penalty_horizon_multiplier: float = float(emp_death_penalty_horizon_multiplier)
+
+        # CHUAN HOA REWARD THEO TUNG LOAI TAC TU (he so hieu chinh, KHONG doi dang ham
+        # reward). Ly do: PPO cua RLlib cat sai so gia tri o vf_clip_param (binh phuong
+        # sai so > nguong => gradient bang 0). Do tren policy ngau nhien, |return| chiet
+        # khau (gamma=0.99) cua Government/Bank/Supervisor ~ hang tram-nghin, nen 98-99%
+        # mau bi cat va critic khong hoc: vf_explained_var ~ 0,0 o ~20 lan train that.
+        # Nhan reward voi mot he so co dinh dua |return| p90 ve ~20 (< sqrt(vf_clip))
+        # giu nguyen thu tu uu tien HANH VI (advantage duoc chuan hoa moi batch nen
+        # policy gradient bat bien voi he so nhan) nhung cho critic tin hieu hoc duoc.
+        # Trich dan: Engstrom, L. et al. (2020), "Implementation Matters in Deep Policy
+        # Gradients: A Case Study on PPO and TRPO", ICLR; Andrychowicz, M. et al. (2021),
+        # "What Matters in On-Policy Reinforcement Learning? A Large-Scale Empirical
+        # Study", ICLR; van Hasselt, H. et al. (2016), "Learning values across many
+        # orders of magnitude", NeurIPS. Gia tri cu the la CALIBRATION cua du an suy tu
+        # phan phoi return do duoc (khong phai con so trong cac bai bao tren).
+        # LUU Y HIEU CHINH LAI: he so cua Economy PHAI do lai moi khi doi phan phoi reward
+        # cua no. Ban dau 0,20 (luc thuong khoi luong con chet, |r| trung vi ~0,19); sau
+        # khi khoi phuc thuong khoi luong (rule_engine Section 4, total_market_turnover)
+        # return cua Economy lon hon nhieu (p90 ~162 voi 0,20) nen ha xuong 0,025.
+        # DO LAI LAN NUA (v0.16) sau khi dong vong chu chuyen (chi tieu tu tai san thanh
+        # khoan + chi mua hang G + thuong Chinh phu tren GDP thuc): phan phoi reward doi vi
+        # nen kinh te lanh manh hon (Employee/Firm p90 ~45-47 voi he so cu) -> Employee 0,045,
+        # Firm 0,018, Government 0,04, Economy 0,02; Bank (return ~1) va Supervisor giu nguyen.
+        self.reward_scale: Dict[AgentType, float] = {
+            AgentType.EMPLOYEE: float(reward_scale_employee),
+            AgentType.FIRM: float(reward_scale_firm),
+            AgentType.GOVERNMENT: float(reward_scale_government),
+            AgentType.BANK: float(reward_scale_bank),
+            AgentType.SUPERVISOR: float(reward_scale_supervisor),
+            AgentType.ECONOMY: float(reward_scale_economy),
+        }
+        self.reward_clip: float = float(reward_clip)
+        # GUARD "fail loudly": reward_clip KHONG DUOC cat mat hinh phat tu vong theo tuoi.
+        # (Loi that da xay ra: wrapper RLlib clip cung +-100 khien hinh phat -122,11 cua
+        # agent 19 tuoi bi cat ve -100,00, vo hieu hoa hoan toan co che tuoi/horizon.)
+        worst_death = (self.emp_death_penalty_base * (1.0 + max(0.0, self.emp_death_penalty_horizon_multiplier))
+                       * self.reward_scale[AgentType.EMPLOYEE])
+        if worst_death > self.reward_clip:
+            raise ValueError(
+                f"[MacroEnvironment] reward_clip={self.reward_clip} < hinh phat tu vong toi da sau chuan hoa "
+                f"({worst_death:.2f}) -- clip se cat mat tin hieu tuoi/horizon. Tang reward_clip hoac giam he so."
+            )
+
+        # Tran chi so hoa chi tieu sinh ton theo gia (bo doi cua rule_engine Section 4),
+        # tinh theo boi so cua initial_living_cost -- xem chu thich tai noi su dung.
+        self.subsistence_indexation_ceiling_mult: float = float(subsistence_indexation_ceiling_mult)
 
         self.event_bus: EventBus = EventBus()
-        self.rule_engine: RuleEngine = RuleEngine(event_bus=self.event_bus)
+        self.rule_engine: RuleEngine = RuleEngine(
+            event_bus=self.event_bus,
+            subsistence_indexation_ceiling_mult=self.subsistence_indexation_ceiling_mult,
+        )
         self.agents: Dict[str, BaseAgent] = {}
         self.banks: List[Bank] = []
 
@@ -49,7 +157,7 @@ class MacroEnvironment:
 
     def _create_world(self) -> None:
         self.agents.clear()
-        self.gov = Government(agent_id="gov_1")
+        self.gov = Government(agent_id="gov_1", gini_penalty_coef=self.gini_penalty_coef, death_penalty_coef=self.death_penalty_coef)
         self.eco = Economy(agent_id="eco_1")
         self.sup = Supervisor(agent_id="sup_1")
 
@@ -59,7 +167,15 @@ class MacroEnvironment:
         # được giữ làm alias trỏ tới ngân hàng đầu tiên cho các chỗ chỉ cần một
         # đại diện hiển thị nhanh (vd. macro "headline" stats) -- mọi logic tài
         # chính thực sự (tín dụng, tiền gửi) dùng self.banks / RuleEngine.
-        self.banks = [Bank(agent_id=f"bank_{i}") for i in range(self.num_banks)]
+        self.banks = [
+            Bank(
+                agent_id=f"bank_{i}",
+                npl_flow_penalty_coef=self.npl_flow_penalty_coef,
+                npl_stock_penalty_coef=self.npl_stock_penalty_coef,
+                npl_writeoff_months=self.npl_writeoff_months
+            )
+            for i in range(self.num_banks)
+        ]
         self.bank = self.banks[0]
 
         self.agents[self.gov.agent_id] = self.gov
@@ -74,7 +190,11 @@ class MacroEnvironment:
 
         for j in range(self.num_employees):
             e_id = f"emp_{j}"
-            self.agents[e_id] = Employee(agent_id=e_id)
+            self.agents[e_id] = Employee(
+                agent_id=e_id,
+                death_penalty_base=self.emp_death_penalty_base,
+                death_penalty_horizon_multiplier=self.emp_death_penalty_horizon_multiplier
+            )
 
     def _sample_skill(self) -> float:
         """Phân phối kỹ năng liên tục Log-Normal (Mincer, 1974; Saez, 2001)."""
@@ -105,7 +225,7 @@ class MacroEnvironment:
         # tăng num_banks.
         per_bank_reserves = 500000.0 / len(self.banks)
         for b in self.banks:
-            b.initialize(initial_reserves=per_bank_reserves, initial_lending_rate=0.06, initial_deposit_rate=0.02)
+            b.initialize(initial_reserves=per_bank_reserves, initial_lending_rate=self.initial_lending_rate, initial_deposit_rate=self.initial_deposit_rate)
         self.eco.initialize(initial_living_cost=20.0, initial_housing_inventory=100, initial_house_price=1000.0)
         self.sup.initialize(initial_budget=50000.0, initial_audit_rate=0.05, initial_fine_multiplier=1.5)
         
@@ -141,14 +261,31 @@ class MacroEnvironment:
                 agent.status = LifeCycleStatus.ACTIVE
 
         raw_state = self.get_raw_environment_state()
-        initial_obs = {aid: a.observe(raw_state).vector for aid, a in self.agents.items()}
+        initial_obs = {aid: sanitize_observation(a.observe(raw_state).vector) for aid, a in self.agents.items()}
         infos = {aid: {"status": a.status.name} for aid, a in self.agents.items()}
         return initial_obs, infos
+
+    def observe_agent(self, agent_id: str, raw_state: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """Quan sat DA LAM SACH cua mot tac tu -- DUNG DUNG cach step()/reset() dung de
+        tao quan sat cho RLlib. server.py/simulate PHAI goi ham nay (khong tu goi
+        agent.observe()) de policy suy luan thay dung nhung gi no thay luc train."""
+        if raw_state is None:
+            raw_state = self.get_raw_environment_state()
+        return sanitize_observation(self.agents[agent_id].observe(raw_state).vector)
+
+    def _finalize_reward(self, agent: BaseAgent, raw_reward: float) -> float:
+        """reward tho -> nhan he so chuan hoa theo loai tac tu -> NaN/Inf ve 0 -> kep [-clip, clip].
+        Mot nguon duy nhat cho ca train lan simulate (xem chu thich reward_scale o __init__)."""
+        r = float(raw_reward) * self.reward_scale[agent.agent_type]
+        if not np.isfinite(r):
+            return 0.0
+        return float(np.clip(r, -self.reward_clip, self.reward_clip))
 
     def step(self, action_dict: Dict[str, np.ndarray]) -> Tuple[
         Dict[str, np.ndarray], Dict[str, float], Dict[str, bool], Dict[str, bool], Dict[str, Any]
     ]:
         self.timestep += 1
+        self.births_this_step = 0
         for a in self.agents.values():
             if isinstance(a, Firm):
                 a.age_months = getattr(a, "age_months", 0) + 1
@@ -160,7 +297,7 @@ class MacroEnvironment:
                 agent = self.agents[agent_id]
                 if agent.status in [LifeCycleStatus.ACTIVE, LifeCycleStatus.INITIALIZED]:
                     agent.status = LifeCycleStatus.ACTIVE  # Auto-transition sang ACTIVE
-                    act = Action(agent_id=agent_id, action_type="STEP_ACTION", values=np.asarray(raw_vals, dtype=np.float32))
+                    act = Action(agent_id=agent_id, action_type="STEP_ACTION", values=sanitize_action(raw_vals))
                     val_res: ValidationResult = agent.validate_action(act)
                     validated_actions[agent_id] = Action(
                         agent_id=agent_id,
@@ -172,7 +309,8 @@ class MacroEnvironment:
         transition_results: Dict[str, TransitionResult] = self.rule_engine.execute_cycle(
             agents=self.agents,
             validated_actions=validated_actions,
-            timestep=self.timestep
+            timestep=self.timestep,
+            max_steps=self.max_steps
         )
 
         rewards_all: Dict[str, float] = {}
@@ -195,8 +333,32 @@ class MacroEnvironment:
         dead_emps = [aid for aid in self.agents.items() if isinstance(aid[1], Employee) and aid[1].status in [LifeCycleStatus.DECEASED, LifeCycleStatus.DEAD, LifeCycleStatus.TERMINATED]]
         bankrupt_firms = [aid for aid in self.agents.items() if isinstance(aid[1], Firm) and aid[1].status == LifeCycleStatus.BANKRUPT]
 
+        # LỖI API MultiAgentEnv (Gymnasium-style) ĐÃ SỬA -- xem CLAUDE.md để
+        # biết bối cảnh phát hiện đầy đủ. Trước đây agent vừa chết/phá sản bị
+        # pop() khỏi self.agents NGAY TẠI ĐÂY, TRƯỚC KHI observations/rewards/
+        # terminateds cuối cùng được dựng (phía dưới, chỉ lặp qua
+        # self.agents.keys() -- lúc đó agent đã biến mất khỏi dict). Hệ quả:
+        # RLlib KHÔNG BAO GIỜ nhận được terminated=True, reward cuối cùng, hay
+        # observation cuối cùng cho agent này -- toàn bộ tín hiệu hậu quả của
+        # cái chết/phá sản (death_penalty, dead_worker_penalty, bankrupt
+        # penalty...) chưa từng thực sự tới được policy gradient; agent chỉ
+        # "biến mất" một cách vô hình, không phải kết thúc MDP có chủ đích.
+        # Đây là lỗi API chuẩn: mọi agent rời khỏi tập hợp active PHẢI có đúng
+        # 1 lần cuối terminated=True kèm reward/obs cuối cùng.
+        # Sửa: giữ lại REFERENCE Python (không phải dict entry) tới agent vừa
+        # chết/phá sản TRƯỚC KHI pop -- object vẫn còn hợp lệ (mang đúng
+        # trạng thái lúc chết: cash âm, energy=0...) dù đã bị xoá khỏi dict,
+        # để sau khi raw_state được tính, lấy observation CUỐI CÙNG từ chính
+        # object này rồi gộp vào observations/rewards/terminateds/truncateds/
+        # infos với terminated=True (KHÔNG PHẢI truncated -- đây là trạng thái
+        # hấp thụ có chủ đích của MDP riêng agent đó, không phải bị cắt vì hết
+        # giờ episode chung -- terminateds["__all__"] KHÔNG bị ảnh hưởng, vẫn
+        # chỉ True khi toàn episode kết thúc).
+        terminal_agents_this_step: Dict[str, BaseAgent] = {}
+
         for d_id, emp in dead_emps:
             self.reported_dead_agents.add(d_id)
+            terminal_agents_this_step[d_id] = emp
             self.agents.pop(d_id, None)
             # Bảo toàn dòng tiền (Godley & Lavoie, 2007): TOÀN BỘ của cải còn lại
             # của người đã mất (tiền mặt + tiền gửi ngân hàng) được thu hồi về
@@ -214,6 +376,7 @@ class MacroEnvironment:
 
         for b_id, firm in bankrupt_firms:
             self.reported_dead_agents.add(b_id)
+            terminal_agents_this_step[b_id] = firm
             self.agents.pop(b_id, None)
             # Xem chú thích bảo toàn dòng tiền ở nhánh dead_emps phía trên -- áp
             # dụng cùng nguyên tắc: thu hồi toàn bộ cash còn lại (kể cả âm) về
@@ -234,41 +397,156 @@ class MacroEnvironment:
         avg_wage = (sum(e.wage for e in employed_emps) / len(employed_emps)) if employed_emps else self.eco.base_living_cost
         living_standard_ratio = avg_wage / max(1.0, self.eco.base_living_cost)
 
-        HARD_MIN_EMP = 30
-        HARD_MAX_EMP = 85
+        # HARD_MIN_EMP/HARD_MAX_EMP doc tu self.* (cau hinh qua constructor /
+        # ScenarioConfig) -- mac dinh 30/200. Nang TRAN khong lam tang TOC DO
+        # tang truong toi da moi step (van toi da 1-2 newborn/step nhu cu,
+        # xem vong lap num_newborns ben duoi) -- chi mo rong bien tren cho
+        # phep, khong tu dong lam dan so bung no nhanh hon.
+        HARD_MIN_EMP = self.hard_min_emp
+        HARD_MAX_EMP = self.hard_max_emp
+
+        # --- CƠ CHẾ TĂNG TRƯỞNG DÂN SỐ: HAI NHÁNH TÁCH BẠCH RÕ RÀNG ---
+        #
+        # NHÁNH 1 (KHẨN CẤP, current_emp_count < HARD_MIN_EMP): lưới an sinh
+        # bảo vệ đáy (population floor safety net). Đây là một BIỆN PHÁP KỸ
+        # THUẬT thuần tuý để tránh trạng thái suy vong tuyệt đối (absorbing
+        # extinction state) làm hỏng toàn bộ tiến trình RL training (môi
+        # trường rỗng không còn agent nào thì không còn tín hiệu học) --
+        # KHÔNG phải mô phỏng một quá trình nhân khẩu học/sinh học thực tế
+        # nào (không nền kinh tế thật nào có "chính phủ tạo ra người lớn từ
+        # hư không"). Newborn ở nhánh này được tài trợ trực tiếp từ Kho bạc,
+        # KHÔNG gắn với cha/mẹ cụ thể nào -- giữ nguyên cơ chế gốc, chỉ làm
+        # rõ bản chất "biên giới kỹ thuật" của nó trong comment.
+        #
+        # NHÁNH 2 (TỰ NGUYỆN, HARD_MIN_EMP <= count < HARD_MAX_EMP): sinh sản
+        # nội sinh (endogenous), theo đúng mô hình Sugarscape kinh điển:
+        #   Epstein, J. M., & Axtell, R. (1996). "Growing Artificial
+        #   Societies: Social Science from the Bottom Up". Brookings
+        #   Institution Press / MIT Press -- Chương 2 ("Sexual Reproduction,
+        #   Inheritance, Culture"). Trong Sugarscape, một agent chỉ sinh sản
+        #   được khi (a) nằm trong độ tuổi sinh sản hợp lệ, VÀ (b) tích luỹ đủ
+        #   "sugar" (của cải) vượt ngưỡng tối thiểu; con cái KẾ THỪA một phần
+        #   của cải VÀ một phần đặc điểm di truyền (ở đây: skill_level,
+        #   risk_aversion, tax_morale) từ cha/mẹ, có pha trộn/đột biến ngẫu
+        #   nhiên nhỏ. Phần chuyển giao của cải (inheritance) tham chiếu thêm
+        #   Piketty, T. (2014), "Capital in the Twenty-First Century",
+        #   Belknap/Harvard University Press, về vai trò của thừa kế trong
+        #   bất bình đẳng liên thế hệ (r > g).
+        #   (Đã xác minh lại: Neural MMO (Suárez et al., 2019, arXiv:1903.00784)
+        #   CHỈ dùng permadeath + respawn slot NGẪU NHIÊN HOÀN TOÀN, KHÔNG có
+        #   khái niệm cha/mẹ hay kế thừa gen -- không phù hợp làm nguồn trích
+        #   dẫn cho cơ chế này.)
+        # Toan bo hang so ben duoi doc tu self.* (cau hinh qua constructor /
+        # ScenarioConfig, xem be/scenario_config.py) de phuc vu thu nghiem
+        # nhieu kich ban calibration ma khong can sua code.
+        MIN_REPRODUCTION_AGE = self.min_reproduction_age          # tuổi lao động đã ổn định (sau tuổi vào đời 18 ở cả 2 nhánh)
+        MAX_REPRODUCTION_AGE = self.max_reproduction_age          # cận trên độ tuổi sinh sản còn năng động kinh tế
+        MIN_REPRODUCTION_WEALTH_MULT = self.min_reproduction_wealth_mult  # phải dư >= N tháng chi phí sống mới đủ "sugar" để sinh sản (ngưỡng CAO HƠN K_LIQUIDITY_BUFFER=2.0 dùng cho đệm thanh khoản giao dịch ở rule_engine.py Section 8B -- có chủ đích, vì đây là thặng dư THẬT SỰ chứ không phải đệm giao dịch)
+        INHERITANCE_FRACTION = self.inheritance_fraction          # tỷ lệ của cải cha/mẹ chuyển cho con
+        TRAIT_MUTATION_SIGMA = self.trait_mutation_sigma          # độ lệch chuẩn đột biến Gaussian quanh đặc điểm cha/mẹ
+        MIN_NEWBORN_CASH = self.min_newborn_cash                  # sàn an sinh tối thiểu, Kho bạc bù thêm nếu thừa kế chưa đủ
 
         num_newborns = 0
+        newborn_parent: Optional[Employee] = None
         if current_emp_count < HARD_MIN_EMP:
             num_newborns = 2 if current_emp_count < 20 else 1
         elif current_emp_count < HARD_MAX_EMP:
             p_birth = 0.08 + 0.15 * max(0.0, 1.0 - unemployment_rate) + 0.10 * max(0.0, living_standard_ratio - 1.0)
             p_birth = float(np.clip(p_birth, 0.02, 0.35))
-            if np.random.rand() < p_birth and self.gov.treasury >= (3.0 * self.eco.base_living_cost):
+            eligible_parents = [
+                e for e in active_emps_list
+                if MIN_REPRODUCTION_AGE <= e.age <= MAX_REPRODUCTION_AGE
+                and (e.cash + getattr(e, "bank_deposit", 0.0)) >= MIN_REPRODUCTION_WEALTH_MULT * self.eco.base_living_cost
+            ]
+            # "Sinh sản thật" đòi hỏi có ít nhất một cha/mẹ đủ điều kiện --
+            # KHÔNG fallback về trợ cấp vô danh nếu không ai đủ điều kiện
+            # (khác nhánh khẩn cấp phía trên).
+            if (eligible_parents and np.random.rand() < p_birth
+                    and self.gov.treasury >= (3.0 * self.eco.base_living_cost)):
                 num_newborns = 1
+                newborn_parent = eligible_parents[int(np.random.randint(len(eligible_parents)))]
 
         grant_per_newborn = float(3.0 * self.eco.base_living_cost)
         for _ in range(num_newborns):
             new_eid = f"emp_{self.next_emp_id}"
             self.next_emp_id += 1
-            grant = grant_per_newborn if self.gov.treasury >= (grant_per_newborn * 2.0) else (0.5 * grant_per_newborn)
-            self.gov.treasury -= grant
-            
-            new_emp = Employee(agent_id=new_eid)
+
+            if newborn_parent is not None:
+                # NHÁNH 2: sinh sản nội sinh có cha/mẹ thật (Epstein & Axtell, 1996)
+                parent_wealth = newborn_parent.cash + getattr(newborn_parent, "bank_deposit", 0.0)
+                inheritance = INHERITANCE_FRACTION * parent_wealth
+
+                # Chuyển giao của cải cha/mẹ -> con: rút trước từ cash, nếu
+                # không đủ rút tiếp từ bank_deposit (bảo toàn SFC tuyệt đối --
+                # tổng hệ thống không đổi, chỉ chuyển sở hữu giữa 2 agent).
+                cash_take = min(inheritance, newborn_parent.cash)
+                newborn_parent.cash -= cash_take
+                remaining = inheritance - cash_take
+                if remaining > 0.0:
+                    deposit_take = min(remaining, getattr(newborn_parent, "bank_deposit", 0.0))
+                    newborn_parent.bank_deposit = getattr(newborn_parent, "bank_deposit", 0.0) - deposit_take
+                    inheritance = cash_take + deposit_take
+
+                # An sinh tối thiểu: nếu thừa kế chưa đạt sàn sống, Kho bạc bù
+                # thêm phần thiếu (giữ đúng tinh thần lưới an sinh đã có, chỉ
+                # áp dụng cho phần THIẾU thay vì toàn bộ như nhánh khẩn cấp).
+                topup = max(0.0, MIN_NEWBORN_CASH - inheritance)
+                if topup > 0.0 and self.gov.treasury >= topup:
+                    self.gov.treasury -= topup
+                else:
+                    topup = 0.0
+                newborn_cash = inheritance + topup
+
+                # Kế thừa đặc điểm di truyền + đột biến Gaussian nhỏ quanh
+                # giá trị cha/mẹ (Epstein & Axtell, 1996), thay vì random độc
+                # lập hoàn toàn như nhánh khẩn cấp.
+                child_skill = float(np.clip(
+                    newborn_parent.skill_level + float(np.random.normal(0.0, TRAIT_MUTATION_SIGMA * newborn_parent.skill_level)),
+                    0.60, 4.0
+                ))
+                child_risk_aversion = float(np.clip(
+                    newborn_parent.risk_aversion + float(np.random.normal(0.0, TRAIT_MUTATION_SIGMA)),
+                    0.10, 0.95
+                ))
+                child_tax_morale = float(np.clip(
+                    newborn_parent.tax_morale + float(np.random.normal(0.0, TRAIT_MUTATION_SIGMA)),
+                    0.30, 0.99
+                ))
+                birth_source_id = newborn_parent.agent_id
+                parent_id_payload = newborn_parent.agent_id
+            else:
+                # NHÁNH 1: lưới an sinh bảo vệ đáy, không gắn parent (xem comment ở trên)
+                grant = grant_per_newborn if self.gov.treasury >= (grant_per_newborn * 2.0) else (0.5 * grant_per_newborn)
+                self.gov.treasury -= grant
+                newborn_cash = grant
+                child_skill = self._sample_skill()
+                child_risk_aversion = float(np.random.uniform(0.3, 0.7))
+                child_tax_morale = float(np.random.uniform(0.5, 0.95))
+                birth_source_id = "SOCIETY"
+                parent_id_payload = None
+
+            new_emp = Employee(
+                agent_id=new_eid,
+                death_penalty_base=self.emp_death_penalty_base,
+                death_penalty_horizon_multiplier=self.emp_death_penalty_horizon_multiplier
+            )
             new_emp.initialize(
-                skill_level=self._sample_skill(),
-                risk_aversion=float(np.random.uniform(0.3, 0.7)),
-                tax_morale=float(np.random.uniform(0.5, 0.95)),
-                initial_cash=grant,
+                skill_level=child_skill,
+                risk_aversion=child_risk_aversion,
+                tax_morale=child_tax_morale,
+                initial_cash=newborn_cash,
                 initial_energy=1.0,
                 age=18
             )
             new_emp.status = LifeCycleStatus.ACTIVE
+            new_emp.parent_id = parent_id_payload
             self.agents[new_eid] = new_emp
+            self.births_this_step += 1
             self.event_bus.publish(Event(
                 event_type=EventType.AGENT_BORN,
-                source_id="SOCIETY",
+                source_id=birth_source_id,
                 target_id=new_eid,
-                payload={"cash": round(new_emp.cash, 1), "skill": round(new_emp.skill_level, 2)},
+                payload={"cash": round(new_emp.cash, 1), "skill": round(new_emp.skill_level, 2), "parent_id": parent_id_payload},
                 timestep=self.timestep
             ))
 
@@ -328,8 +606,8 @@ class MacroEnvironment:
         raw_state = self.get_raw_environment_state()
         is_time_up = self.timestep >= self.max_steps
 
-        observations = {aid: a.observe(raw_state).vector for aid, a in self.agents.items()}
-        rewards = {aid: rewards_all.get(aid, 0.0) for aid in self.agents.keys()}
+        observations = {aid: sanitize_observation(a.observe(raw_state).vector) for aid, a in self.agents.items()}
+        rewards = {aid: self._finalize_reward(a, rewards_all.get(aid, 0.0)) for aid, a in self.agents.items()}
         terminateds = {"__all__": False}
         truncateds = {"__all__": is_time_up}
         infos = {aid: {"status": a.status.name} for aid, a in self.agents.items()}
@@ -337,6 +615,20 @@ class MacroEnvironment:
         for aid in self.agents.keys():
             terminateds[aid] = False
             truncateds[aid] = is_time_up
+
+        # Gộp lần cuối cho các agent vừa chết/phá sản bước NÀY (xem chú thích
+        # đầy đủ tại nơi dựng terminal_agents_this_step phía trên). Observation
+        # được tính từ chính object gốc (đã cập nhật đúng trạng thái lúc chết
+        # qua apply_result trước đó trong step() này), KHÔNG dùng vector rỗng
+        # -- đảm bảo policy network backup đúng giá trị tại state hấp thụ thật,
+        # không phải nhiễu ngẫu nhiên. terminated=True, truncated=False (kết
+        # thúc MDP có chủ đích, không phải bị cắt vì hết giờ episode chung).
+        for t_id, t_agent in terminal_agents_this_step.items():
+            observations[t_id] = sanitize_observation(t_agent.observe(raw_state).vector)
+            rewards[t_id] = self._finalize_reward(t_agent, rewards_all.get(t_id, 0.0))
+            terminateds[t_id] = True
+            truncateds[t_id] = False
+            infos[t_id] = {"status": t_agent.status.name}
 
         return observations, rewards, terminateds, truncateds, infos
 
@@ -414,6 +706,13 @@ class MacroEnvironment:
         # Xem chú thích chi tiết định nghĩa M2 tại get_raw_environment_state().
         m2_supply = self.gov.treasury + total_emp_cash + total_emp_deposits + total_firm_cash
 
+        active_employees_list = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
+        employed_list = [e for e in active_employees_list if e.employed_by is not None]
+        unemployment_rate = 1.0 - (len(employed_list) / max(1, len(active_employees_list)))
+        avg_wage = (sum(e.wage for e in employed_list) / len(employed_list)) if employed_list else 0.0
+        total_loans_all = sum(b.total_loans for b in self.banks)
+        total_npl_all = sum(b.non_performing_loans for b in self.banks)
+
         return {
             "timestep": self.timestep,
             "agents": {agent_id: agent.export_state() for agent_id, agent in self.agents.items()},
@@ -423,12 +722,19 @@ class MacroEnvironment:
                 "treasury": self.gov.treasury,
                 "bank_reserves": sum(b.reserves for b in self.banks),
                 "bank_deposits": sum(b.total_deposits for b in self.banks),
-                "npl": sum(b.non_performing_loans for b in self.banks),
+                "npl": total_npl_all,
+                # npl_ratio_pct dung TOTAL LOANS lam mau so (khong phai reserves --
+                # xem giai thich o rllib_wrapper.py InstitutionalMetricsCallback).
+                "npl_ratio_pct": compute_npl_ratio_pct(total_npl_all, total_loans_all),
+                "bank_loans": total_loans_all,
                 "living_cost": self.eco.base_living_cost,
                 "housing_price": self.eco.housing_price,
                 "inflation": self.eco.inflation_rate,
                 "m2_supply": m2_supply,
-                "active_employees": sum(1 for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE),
+                "active_employees": len(active_employees_list),
+                "employed_count": len(employed_list),
+                "unemployment_rate_pct": float(unemployment_rate * 100.0),
+                "avg_wage": float(avg_wage),
                 "active_firms": sum(1 for a in self.agents.values() if isinstance(a, Firm) and a.status == LifeCycleStatus.ACTIVE)
             }
         }

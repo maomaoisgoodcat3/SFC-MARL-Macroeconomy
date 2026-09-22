@@ -16,6 +16,13 @@ websockets>=12.0
 
 # System Profiling & Hardware Monitoring
 gputil>=1.4.0
+psutil>=5.9.0
+
+# Terminal Log Formatting (training dashboard: rich.Table/Panel)
+rich>=13.0.0
+
+# Scenario Configuration (be/scenario_config.py, scenarios/*.yaml)
+pyyaml>=6.0
 
 # Testing (SFC accounting audit suite, be/tests/)
 pytest>=7.4.0

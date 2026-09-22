@@ -183,20 +183,29 @@
                 <div class="viewport-card logs-card">
                     <div class="card-header">
                         <div class="log-tab-buttons">
-                            <button id="tab-bulletin" class="tab-btn active">System Bulletins</button>
-                            <button id="tab-ledger" class="tab-btn">Transaction Feed</button>
+                            <button id="tab-trend" class="tab-btn active">Xu hướng</button>
+                            <button id="tab-detail" class="tab-btn">Chi tiết</button>
                         </div>
-                        <span id="log-count" style="font-size:10px; color:var(--text-muted);">0 events</span>
+                        <span id="log-count" style="font-size:10px; color:var(--text-muted);">0 sự kiện</span>
                     </div>
 
-                    <!-- TAB 1: SU KIEN TRONG YEU (GIAN LAN, PHAT, DIED, BANKRUPT, SHOCK) -->
-                    <div class="log-stream active" id="bulletin-stream-container">
-                        <div class="empty-log-hint" data-placeholder="1">No events yet — press RUN to start the simulation.</div>
+                    <!-- TAB 1: DIGEST DINH KY (12 thang/lan) -- xu huong chung, khong phai raw event -->
+                    <div class="log-stream active" id="trend-stream-container">
+                        <div class="empty-log-hint">Chưa có dữ liệu xu hướng — nhấn RUN để bắt đầu (digest mỗi 12 tháng).</div>
                     </div>
 
-                    <!-- TAB 2: GIAO DICH THUONG NHAT (LUONG, MUA HANG, TRA NO) -->
-                    <div class="log-stream" id="ledger-stream-container" style="display:none;">
-                        <div class="empty-log-hint" data-placeholder="1">No transactions yet.</div>
+                    <!-- TAB 2: TOAN BO SU KIEN, 1 QUY CHUAN DUY NHAT, LOC DUOC THEO NHOM -->
+                    <div class="log-filter-row" id="log-filter-row" style="display:none;">
+                        <button class="log-filter-chip active" data-cat="all">Tất cả</button>
+                        <button class="log-filter-chip" data-cat="labor">Lao động</button>
+                        <button class="log-filter-chip" data-cat="market">Thị trường</button>
+                        <button class="log-filter-chip" data-cat="fiscal">Tài khoá</button>
+                        <button class="log-filter-chip" data-cat="credit">Tín dụng</button>
+                        <button class="log-filter-chip" data-cat="lifecycle">Vòng đời</button>
+                        <button class="log-filter-chip" data-cat="policy">Chính sách</button>
+                    </div>
+                    <div class="log-stream" id="detail-stream-container" style="display:none;">
+                        <div class="empty-log-hint">Chưa có sự kiện nào.</div>
                     </div>
                 </div>
             </aside>

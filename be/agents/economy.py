@@ -33,6 +33,21 @@ class Economy(BaseAgent):
         # thức bảo toàn SFC (xem rule_engine.py, Section 3-4). Phơi bày tường
         # minh để kiểm toán tự động (be/tests/test_sfc_accounting.py).
         self.last_capital_depreciation: float = 0.0
+        # Đòn bẩy chính sách tài khóa phản chu kỳ (rule_engine.py Section 4B) --
+        # Blanchard & Perotti (2002). Lưu lại thuần để quan sát/audit, KHÔNG
+        # nạp ngược vào observe() (tránh đổi obs shape, phá checkpoint cũ).
+        self.last_demand_injection_ratio: float = 0.0
+        self.last_demand_injection_value: float = 0.0
+        # Mốc giá CỐ ĐỊNH tại thời điểm reset episode (KHÔNG đổi trong suốt
+        # episode, khác self.base_living_cost là biến sống). Dùng làm mốc quy
+        # đổi injection từ real quantity sang nominal (rule_engine.py Section
+        # 4B) -- BẮT BUỘC dùng hằng số này thay vì expected_price/
+        # base_living_cost đang biến động, nếu không sẽ tạo vòng lặp phản hồi
+        # dương (price -> injection_base -> spending -> price) có thể phân kỳ
+        # về mặt số học khi cung thực (total_real_supply) co lại nhanh hơn
+        # dân số trong khủng hoảng thất nghiệp -- lỗi THẬT đã xảy ra và được
+        # sửa ở đây, xem CLAUDE_HISTORY.md.
+        self.initial_living_cost: float = 15.0
 
     def initialize(self, 
                    initial_living_cost: float = 15.0,
@@ -41,6 +56,7 @@ class Economy(BaseAgent):
                    target_inflation: float = 0.02) -> None:
         self.base_living_cost = float(initial_living_cost)
         self.last_base_living_cost = float(initial_living_cost)
+        self.initial_living_cost = float(initial_living_cost)
         self.housing_inventory = int(initial_housing_inventory)
         self.housing_price = float(initial_house_price)
         self.last_housing_price = float(initial_house_price)
@@ -91,14 +107,25 @@ class Economy(BaseAgent):
     def decide(self, observation: Observation) -> Action:
         """
         Khong gian hanh dong 3 chieu:
-        [0]: He so dieu chinh chi phi sinh hoat (Living Cost Factor): [0.90, 1.10]
+        [0]: Cuong do bom/rut CAU tai khoa phan chu ky (Fiscal Demand
+             Injection Ratio), [-0.20, 0.20] -- xem rule_engine.py Section 4B
+             va calculate_reward() o duoi. THAY THE cho "Living Cost Factor"
+             cu (nhan truc tiep vao base_living_cost) vi thiet ke cu khong co
+             hieu luc thuc te (key executed_cost_factor khong bao gio duoc
+             RuleEngine ghi -- phat hien qua audit hardcode formula) VA ve
+             ban chat kinh te khong co "khe ho" nao trong cong thuc Calvo
+             (1983) de nhet mot hanh dong dieu tiet gia truc tiep vao ma
+             khong bia them co che moi ngoai trich dan.
         [1]: He so dieu chinh gia bat dong san (Housing Price Factor): [0.90, 1.10]
+             -- CHUA CO HIEU LUC: cho toi khi co market nha dat/dau gia that
+             (xem ke hoach mo rong tuong lai), day van la placeholder no-op.
         [2]: So luong quy nha/dat bo sung ra thi truong (Housing Supply Expansion): [0, 10]
+             -- CHUA CO HIEU LUC, ly do nhu tren.
         """
         if "injected_action" in observation.metadata:
             raw_action = observation.metadata["injected_action"]
         else:
-            raw_action = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+            raw_action = np.array([0.0, 1.0, 1.0], dtype=np.float32)
 
         return Action(
             agent_id=self.agent_id,
@@ -115,12 +142,17 @@ class Economy(BaseAgent):
                 reason="Economy action vector must contain 3 elements"
             )
 
-        # Tranh shock gia: moi chu ky chi cho phep bien dong toi da +- 10%
-        living_cost_factor = float(np.clip(vals[0], 0.90, 1.10))
+        # He so cau truc TU DO HIEU CHINH: bien do bom/rut cau toi da +-20%
+        # tong cau sinh ton co so cua dan so dang hoat dong (xem rule_engine.py
+        # Section 4B). KHONG suy ra truc tiep tu Blanchard & Perotti (2002) --
+        # paper do khong dua ra mot ty le % cu the nao, chi xac nhan huong tac
+        # dong (chi tieu chinh phu -> tong cau); +-20% la calibration rieng
+        # cua du an, tranh mot cu bom/rut lam thay doi qua dot ngot tong cau.
+        demand_injection_ratio = float(np.clip(vals[0], -0.20, 0.20))
         housing_price_factor = float(np.clip(vals[1], 0.90, 1.10))
         housing_supply = float(np.clip(vals[2], 0.0, 10.0))
 
-        sanitized = np.array([living_cost_factor, housing_price_factor, housing_supply], dtype=np.float32)
+        sanitized = np.array([demand_injection_ratio, housing_price_factor, housing_supply], dtype=np.float32)
         return ValidationResult(is_valid=True, sanitized_values=sanitized)
 
     def apply_result(self, transition_result: TransitionResult) -> None:
@@ -129,25 +161,44 @@ class Economy(BaseAgent):
         self.last_base_living_cost = self.base_living_cost
         self.last_housing_price = self.housing_price
 
-        # Dieu chinh gia dua tren ket qua thuc thi tu RuleEngine
-        cost_mult = float(delta.get("executed_cost_factor", 1.0))
+        # base_living_cost/inflation_rate THUC SU duoc RuleEngine ghi de truc
+        # tiep ngay sau khi goi apply_result nay (eco.base_living_cost =
+        # actual_living_cost trong rule_engine.py Section 4) -- xem chi tiet
+        # trong docstring class. Doan tinh toan o day chi la du phong/quan sat
+        # noi bo, khong phai nguon su that cho 2 bien nay.
+        self.last_demand_injection_ratio = float(delta.get("demand_injection_ratio", 0.0))
+        self.last_demand_injection_value = float(delta.get("demand_injection_effect", 0.0))
+
+        # [1]/[2]: Housing price/supply -- CHUA CO HIEU LUC (xem decide()),
+        # cac key executed_housing_factor/executed_housing_supply khong duoc
+        # RuleEngine ghi nen day van la no-op, giu nguyen cho toi khi co market
+        # nha dat that.
         price_mult = float(delta.get("executed_housing_factor", 1.0))
         new_housing = int(delta.get("executed_housing_supply", 0))
 
-        self.base_living_cost = float(np.clip(self.base_living_cost * cost_mult, 5.0, 100.0))
         self.housing_price = float(np.clip(self.housing_price * price_mult, 100.0, 50000.0))
         self.housing_inventory = max(0, self.housing_inventory + new_housing - int(delta.get("houses_sold", 0)))
 
-        # Tinh toan Lam phat ky nay
-        cost_growth = (self.base_living_cost - self.last_base_living_cost) / self.last_base_living_cost
-        self.inflation_rate = cost_growth
-        # Kep bien chi so CPI de tranh tran so float32 khi ep kieu trong observe()
-        # o cac chu ky mo phong rat dai (hang tram thang). 1e6 (CPI = 1,000,000
-        # so voi goc 100) da tuong ung sieu lam phat cuc doan -- kep tai day chi
-        # nham bao ve on dinh so hoc, khong lam sai lech tin hieu lam phat thang
-        # (inflation_rate) vi bien do van duoc tinh truc tiep tu base_living_cost
-        # o tren, khong phu thuoc vao cpi_index.
-        self.cpi_index = float(np.clip(self.cpi_index * (1.0 + self.inflation_rate), 1e-6, 1e6))
+        # LOI DA PHAT HIEN VA SUA (ra soat lai khi wiring Section 4B): ban cu
+        # tinh "cost_growth = (base_living_cost - last_base_living_cost) /
+        # last_base_living_cost" roi gan vao self.inflation_rate. Nhung o
+        # env.py::step(), RuleEngine.execute_cycle() (noi truc tiep mutate
+        # eco.base_living_cost = actual_living_cost VA eco.inflation_rate =
+        # calvo_inflation, xem rule_engine.py Section 4) LUON chay xong va
+        # RETURN truoc khi apply_result nay duoc goi. Nghia la khi toi dong
+        # "self.last_base_living_cost = self.base_living_cost" o tren, bien
+        # base_living_cost DA BI RuleEngine cap nhat cho ky nay roi -- last_*
+        # vo tinh bi gan bang chinh gia tri MOI, khien cost_growth LUON BANG 0
+        # va tu tay xoa mat calvo_inflation dung RuleEngine vua tinh, RESET
+        # inflation_rate VE 0.0 sau MOI buoc. Day la ly do inflation_penalty
+        # trong calculate_reward() gan nhu luon la hang so vo nghia bat ke
+        # lam phat/giam phat thuc te -- khong chi vi Economy thieu don bay
+        # nhan qua (da sua o Section 4B, rule_engine.py) ma con vi chinh tin
+        # hieu phan hoi bi hong. Sua: KHONG tinh lai/ghi de self.inflation_rate
+        # o day nua (gia tri cua RuleEngine da dung, giu nguyen), chi doc lai
+        # tu delta["inflation"] (nguon khong bi ghi de) de cap nhat cpi_index.
+        calvo_inflation = float(delta.get("inflation", 0.0))
+        self.cpi_index = float(np.clip(self.cpi_index * (1.0 + calvo_inflation), 1e-6, 1e6))
 
         self.step_trade_volume = float(delta.get("total_market_turnover", 0.0))
         self.market_liquidity_reserve += float(delta.get("liquidity_delta", 0.0))
@@ -211,13 +262,16 @@ class Economy(BaseAgent):
             "inflation_rate": self.inflation_rate,
             "cpi_index": self.cpi_index,
             "step_trade_volume": self.step_trade_volume,
-            "last_capital_depreciation": round(self.last_capital_depreciation, 2)
+            "last_capital_depreciation": round(self.last_capital_depreciation, 2),
+            "last_demand_injection_ratio": round(self.last_demand_injection_ratio, 4),
+            "last_demand_injection_value": round(self.last_demand_injection_value, 1)
         }
 
     def reset(self) -> None:
         super().reset()
         self.base_living_cost = 15.0
         self.last_base_living_cost = 15.0
+        self.initial_living_cost = 15.0
         self.housing_inventory = 100
         self.housing_price = 1000.0
         self.last_housing_price = 1000.0
@@ -226,6 +280,8 @@ class Economy(BaseAgent):
         self.step_trade_volume = 0.0
         self.market_liquidity_reserve = 100000.0
         self.last_capital_depreciation = 0.0
+        self.last_demand_injection_ratio = 0.0
+        self.last_demand_injection_value = 0.0
 
     def terminate(self, reason: str = "") -> None:
         super().terminate(reason)

@@ -1,29 +1,16 @@
 import os
 import sys
+import time
 import argparse
 import logging
+from datetime import datetime
 import ray
-from ray.rllib.algorithms.ppo import PPOConfig
 
-from be.rllib_wrapper import (
-    RLlibMacroEnv,
-    policy_mapping_fn,
-    InstitutionalMetricsCallback,
-    EMPLOYEE_OBS_SPACE,
-    EMPLOYEE_ACT_SPACE,
-    FIRM_OBS_SPACE,
-    FIRM_ACT_SPACE,
-    GOVERNMENT_OBS_SPACE,
-    GOVERNMENT_ACT_SPACE,
-    BANK_OBS_SPACE,
-    BANK_ACT_SPACE,
-    SUPERVISOR_OBS_SPACE,
-    SUPERVISOR_ACT_SPACE,
-    ECONOMY_OBS_SPACE,
-    ECONOMY_ACT_SPACE
-)
+from be.rllib_wrapper import build_ppo_config
 from be.env import MacroEnvironment
 from be.logger import InstitutionalLogger
+from be.training_monitor import TrainingMonitor
+from be.scenario_config import ScenarioConfig
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(asctime)s - %(message)s")
 logger = logging.getLogger("InstitutionalEconomist.Main")
@@ -31,10 +18,50 @@ logger = logging.getLogger("InstitutionalEconomist.Main")
 def parse_args():
     parser = argparse.ArgumentParser(description="Institutional AI Economist System Controller")
     parser.add_argument("--mode", type=str, choices=["train", "simulate"], default="train", help="Run mode")
+    parser.add_argument(
+        "--config", type=str, default=None,
+        help=(
+            "Duong dan toi 1 file YAML ScenarioConfig (xem be/scenario_config.py, "
+            "vd. scenarios/default.yaml, scenarios/em_baseline.yaml). Khi duoc chi "
+            "dinh, GHI DE toan bo cac --flag calibration/quy mo dan so ben duoi "
+            "(--num-employees, --inheritance-fraction, --gini-penalty-coef, v.v.) "
+            "-- cac flag DIEU HANH (--train-iters, --num-workers, --checkpoint-*, "
+            "--seed, --scenario-name) van hoat dong binh thuong. Bo qua --config "
+            "= hanh vi giong het truoc day (dung gia tri --flag rieng le / mac dinh)."
+        )
+    )
     parser.add_argument("--num-employees", type=int, default=50, help="Total employee population")
     parser.add_argument("--num-firms", type=int, default=5, help="Total firm population")
     parser.add_argument("--num-banks", type=int, default=1, help="Total bank population (relationship-banking credit market)")
     parser.add_argument("--max-steps", type=int, default=240, help="Maximum timesteps (months) per episode")
+    parser.add_argument(
+        "--inheritance-fraction", type=float, default=0.15,
+        help=(
+            "Ty le tai san cha/me chuyen cho con khi sinh san noi sinh "
+            "(Epstein & Axtell, 1996, Sugarscape; xem be/env.py Section A). "
+            "0.0 = tat thua ke (newborn khong nhan gi tu parent, chi con lai "
+            "phan an sinh toi thieu tu Kho bac)."
+        )
+    )
+    parser.add_argument(
+        "--min-newborn-cash", type=float, default=500.0,
+        help="San an sinh toi thieu cho newborn (Kho bac bu them neu thua ke chua du)."
+    )
+    parser.add_argument("--min-reproduction-age", type=int, default=22, help="Tuoi toi thieu de sinh san (Sugarscape)")
+    parser.add_argument("--max-reproduction-age", type=int, default=45, help="Tuoi toi da de sinh san (Sugarscape)")
+    parser.add_argument("--min-reproduction-wealth-mult", type=float, default=3.0, help="So thang chi phi song can du tich luy de sinh san")
+    parser.add_argument("--trait-mutation-sigma", type=float, default=0.05, help="Do lech chuan dot bien gen khi sinh san")
+    parser.add_argument("--hard-min-emp", type=int, default=30, help="San dan so kich hoat luoi an sinh khan cap")
+    parser.add_argument("--hard-max-emp", type=int, default=200, help="Tran dan so cho phep")
+    parser.add_argument("--initial-lending-rate", type=float, default=0.06, help="Lai suat cho vay khoi tao (annual)")
+    parser.add_argument("--initial-deposit-rate", type=float, default=0.02, help="Lai suat tien gui khoi tao (annual)")
+    parser.add_argument("--gini-penalty-coef", type=float, default=25.0, help="He so phat Gini^2 trong reward Government")
+    parser.add_argument("--death-penalty-coef", type=float, default=20.0, help="He so phat moi ca tu vong trong reward Government")
+    parser.add_argument("--npl-flow-penalty-coef", type=float, default=0.06, help="He so phat no xau MOI phat sinh trong reward Bank")
+    parser.add_argument("--npl-stock-penalty-coef", type=float, default=50.0, help="He so phat ty le ton kho NPL/tong du no trong reward Bank")
+    parser.add_argument("--npl-writeoff-months", type=int, default=6, help="So thang no xau duoc mo truoc khi write-off (IFRS 9 / Basel NPL staging)")
+    parser.add_argument("--emp-death-penalty-base", type=float, default=100.0, help="Muc phat tu vong goc cua Employee (ratio=0, tuc chet dung luc max_age)")
+    parser.add_argument("--emp-death-penalty-horizon-multiplier", type=float, default=1.0, help="He so nhan them theo ty le quang doi con lai khi chet (Viscusi & Aldy VSL); can hieu chinh lai bang du lieu training thuc")
     parser.add_argument("--train-iters", type=int, default=500, help="Number of training iterations")
     parser.add_argument("--train-batch-size", type=int, default=4000, help="Training batch size")
     parser.add_argument("--num-workers", type=int, default=8, help="Number of parallel rollout workers")
@@ -55,6 +82,43 @@ def parse_args():
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     return parser.parse_args()
+
+def resolve_scenario_config(args) -> ScenarioConfig:
+    """
+    Xay dung ScenarioConfig tu 1 trong 2 nguon:
+      - Neu --config duoc chi dinh: doc tu file YAML, GHI DE toan bo flag
+        calibration/quy mo rieng le (xem help text cua --config).
+      - Nguoc lai: xay dung truc tiep tu cac --flag rieng le (hanh vi giong
+        het truoc khi co ScenarioConfig -- khong co thay doi ngam an).
+    """
+    if args.config:
+        cfg = ScenarioConfig.from_yaml(args.config)
+        logger.info(f"[SYSTEM] Loaded ScenarioConfig from: {args.config} (ghi de moi flag calibration/quy mo rieng le)")
+        return cfg
+
+    return ScenarioConfig(
+        num_employees=args.num_employees,
+        num_firms=args.num_firms,
+        num_banks=args.num_banks,
+        max_steps=args.max_steps,
+        inheritance_fraction=args.inheritance_fraction,
+        min_newborn_cash=args.min_newborn_cash,
+        min_reproduction_age=args.min_reproduction_age,
+        max_reproduction_age=args.max_reproduction_age,
+        min_reproduction_wealth_mult=args.min_reproduction_wealth_mult,
+        trait_mutation_sigma=args.trait_mutation_sigma,
+        hard_min_emp=args.hard_min_emp,
+        hard_max_emp=args.hard_max_emp,
+        initial_lending_rate=args.initial_lending_rate,
+        initial_deposit_rate=args.initial_deposit_rate,
+        gini_penalty_coef=args.gini_penalty_coef,
+        death_penalty_coef=args.death_penalty_coef,
+        npl_flow_penalty_coef=args.npl_flow_penalty_coef,
+        npl_stock_penalty_coef=args.npl_stock_penalty_coef,
+        npl_writeoff_months=args.npl_writeoff_months,
+        emp_death_penalty_base=args.emp_death_penalty_base,
+        emp_death_penalty_horizon_multiplier=args.emp_death_penalty_horizon_multiplier,
+    )
 
 def find_latest_checkpoint(checkpoint_base: str, scenario_name: str = "training") -> str:
     """
@@ -95,54 +159,24 @@ def find_latest_checkpoint(checkpoint_base: str, scenario_name: str = "training"
 
 def run_training(args):
     logger.info("[SYSTEM] Initializing Institutional AI Economist Training Engine...")
-    logger.info(f"[CONFIG] Scenario: {args.scenario_name} | Employees: {args.num_employees} | Firms: {args.num_firms} | Banks: {args.num_banks} | Max Steps: {args.max_steps}")
+    cfg = resolve_scenario_config(args)
+    logger.info(f"[CONFIG] Scenario: {args.scenario_name} | Employees: {cfg.num_employees} | Firms: {cfg.num_firms} | Banks: {cfg.num_banks} | Max Steps: {cfg.max_steps}")
     logger.info(f"[CONFIG] Batch Size: {args.train_batch_size} | Total Iterations: {args.train_iters} | Checkpoint Freq: {args.checkpoint_freq}")
 
     ray.init(ignore_reinit_error=True)
 
-    policies = {
-        "policy_employee": (None, EMPLOYEE_OBS_SPACE, EMPLOYEE_ACT_SPACE, {}),
-        "policy_firm": (None, FIRM_OBS_SPACE, FIRM_ACT_SPACE, {}),
-        "policy_government": (None, GOVERNMENT_OBS_SPACE, GOVERNMENT_ACT_SPACE, {}),
-        "policy_bank": (None, BANK_OBS_SPACE, BANK_ACT_SPACE, {}),
-        "policy_supervisor": (None, SUPERVISOR_OBS_SPACE, SUPERVISOR_ACT_SPACE, {}),
-        "policy_economy": (None, ECONOMY_OBS_SPACE, ECONOMY_ACT_SPACE, {})
-    }
+    env_config = cfg.to_env_kwargs()
 
-    env_config = {
-        "num_employees": args.num_employees,
-        "num_firms": args.num_firms,
-        "num_banks": args.num_banks,
-        "max_steps": args.max_steps
-    }
-
-    config = (
-        PPOConfig()
-        .environment(env=RLlibMacroEnv, env_config=env_config)
-        .framework("torch")
-        .multi_agent(
-            policies=policies,
-            policy_mapping_fn=policy_mapping_fn,
-            policies_to_train=list(policies.keys())
-        )
-        .training(
-            train_batch_size=args.train_batch_size,
-            sgd_minibatch_size=args.minibatch_size,      # Chia nhỏ để tính gradient nhanh trên CPU
-            num_sgd_iter=10,
-            model={"fcnet_hiddens": [64, 64]},
-            vf_clip_param=500.0,
-            grad_clip=0.5,
-            lr=3e-4
-        )
-        .callbacks(InstitutionalMetricsCallback)
-        .resources(
-            num_gpus=0                   # Chạy thuần CPU
-        )
-        .env_runners(
-            num_env_runners=args.num_workers,  # truoc day bi hardcode = 8, bo qua --num-workers
-            rollout_fragment_length=100
-        )
-        .debugging(seed=args.seed)
+    # Cau hinh PPO/chinh sach DUNG CHUNG voi be/server.py (suy luan/simulate) qua
+    # build_ppo_config -- chi khac nhau o tham so van hanh (so worker, batch size).
+    config = build_ppo_config(
+        env_config,
+        num_env_runners=args.num_workers,   # truoc day bi hardcode = 8, bo qua --num-workers
+        seed=args.seed,
+        train_batch_size=args.train_batch_size,
+        sgd_minibatch_size=args.minibatch_size,   # Chia nho de tinh gradient nhanh tren CPU
+        rollout_fragment_length=100,
+        with_callbacks=True,
     )
 
     logger.info("[SYSTEM] Compiling PyTorch Neural Architectures...")
@@ -197,6 +231,7 @@ def run_training(args):
     os.makedirs(training_cp_dir, exist_ok=True)
 
     current_iter = algo.iteration
+    monitor = TrainingMonitor(total_target_iters=args.train_iters)
 
     try:
         while current_iter < args.train_iters:
@@ -213,17 +248,32 @@ def run_training(args):
             gini = custom_metrics.get("gini_mean", 0.0)
             bank_res = custom_metrics.get("bank_reserves_mean", 0.0)
             npl = custom_metrics.get("bank_npl_mean", 0.0)
+            unemp = custom_metrics.get("unemployment_rate_mean", float("nan"))
+            npl_ratio = custom_metrics.get("npl_ratio_pct_mean", float("nan"))
+            inflation = custom_metrics.get("inflation_pct_mean", float("nan"))
+            treasury = custom_metrics.get("treasury_mean", float("nan"))
+            avg_wage = custom_metrics.get("avg_wage_mean", float("nan"))
+            births = custom_metrics.get("births_this_step_mean", float("nan"))
 
             print(
                 f"[TRAIN] Iter: {current_iter:4d} | "
                 f"Reward: {mean_return:9.2f} | "
                 f"Emp: {active_emp:4.1f} | "
+                f"Unemp: {unemp * 100:4.1f}% | "
                 f"Firm: {active_frm:3.1f} | "
                 f"GDP: {gdp:10.2f} | "
                 f"Gini: {gini:4.2f} | "
+                f"Infl: {inflation:5.2f}% | "
+                f"Wage: {avg_wage:5.1f} | "
+                f"Treasury: {treasury:9.0f} | "
                 f"Reserves: {bank_res:9.1f} | "
-                f"NPL: {npl:7.1f}"
+                f"NPL: {npl:7.1f} ({npl_ratio:4.1f}%) | "
+                f"Births: {births:3.2f}"
             )
+
+            monitor.tick(mean_return)
+            if current_iter % 5 == 0:
+                monitor.render_summary(current_iter)
 
             if current_iter % args.checkpoint_freq == 0:
                 save_path = os.path.join(training_cp_dir, f"iter_{current_iter}")
@@ -247,20 +297,20 @@ def run_training(args):
 def run_simulation(args):
     """Che do thuc thi mo phong thuan tuy (Inference / Headless Sim)."""
     logger.info("[SIMULATION] Initializing deterministic simulation run...")
-    env = MacroEnvironment(
-        num_employees=args.num_employees,
-        num_firms=args.num_firms,
-        num_banks=args.num_banks,
-        max_steps=args.max_steps
-    )
-    inst_logger = InstitutionalLogger(flush_interval=50)
-    
+    cfg = resolve_scenario_config(args)
+    env = MacroEnvironment(**cfg.to_env_kwargs())
+    # run_id gop ten scenario + timestamp de moi lan simulate ra dung 1 bo 5
+    # file Parquet rieng biet, khong ghi de len lan chay truoc (xem parquet_io.py)
+    run_id = f"{args.scenario_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    inst_logger = InstitutionalLogger(flush_interval=50, run_id=run_id)
+    logger.info(f"[SIMULATION] Parquet export run_id: {run_id} (be/exports/<category>/{run_id}.parquet)")
+
     for event_type in env.event_bus._subscribers.keys():
         env.event_bus.subscribe(event_type, inst_logger.log_event_for_ui)
 
     obs, _ = env.reset(seed=args.seed)
-    
-    for step in range(1, args.max_steps + 1):
+
+    for step in range(1, cfg.max_steps + 1):
         actions = {}
         for agent_id, agent in env.agents.items():
             agent_obs = agent.observe(env.get_raw_environment_state())
@@ -271,17 +321,18 @@ def run_simulation(args):
 
         active_w = sum(1 for a in env.agents.values() if a.agent_type.value == "employee" and a.status.name == "ACTIVE")
         active_f = sum(1 for a in env.agents.values() if a.agent_type.value == "firm" and a.status.name == "ACTIVE")
+        employed_w = sum(1 for a in env.agents.values() if a.agent_type.value == "employee" and a.status.name == "ACTIVE" and getattr(a, "employed_by", None) is not None)
+        unemployment_pct = (1.0 - employed_w / max(1, active_w)) * 100.0
 
-        inst_logger.log_macro_step(
+        inst_logger.log_step(
             timestep=step,
             gov=env.gov,
             banks=env.banks,
             eco=env.eco,
             sup=env.sup,
-            active_workers=active_w,
-            active_firms=active_f
+            agents=env.agents,
+            births_this_step=env.births_this_step
         )
-        inst_logger.log_micro_step(timestep=step, agents=env.agents)
         inst_logger.flush_ui_events()
         inst_logger.step_end(step)
 
@@ -289,6 +340,7 @@ def run_simulation(args):
             print(
                 f"[SIM] Month: {step:3d} | "
                 f"Active Emp: {active_w:2d} | "
+                f"Unemp: {unemployment_pct:5.1f}% | "
                 f"Active Firm: {active_f:2d} | "
                 f"GDP: {env.gov.current_gdp:10.2f} | "
                 f"Gini: {env.gov.current_gini:4.2f} | "
@@ -298,8 +350,8 @@ def run_simulation(args):
         if terminateds.get("__all__", False):
             break
 
-    inst_logger.flush_to_disk()
-    logger.info("[SIMULATION] Simulation run finished and logs exported.")
+    inst_logger.close()
+    logger.info(f"[SIMULATION] Simulation run finished. Parquet exported under be/exports/<category>/{run_id}.parquet")
 
 def main():
     args = parse_args()

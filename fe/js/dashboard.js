@@ -6,8 +6,68 @@ const state = {
     macro: {},
     links: [],
     history: { months: [], gdp: [], gini: [] },
-    selectedAgentId: null
+    selectedAgentId: null,
+    // Log tab "Chi tiết": nhóm event đang được lọc hiển thị ('all' = không lọc)
+    logFilter: 'all',
+    // Log tab "Xu hướng": snapshot macro của lần digest gần nhất, dùng để tính delta
+    trendSnapshot: null
 };
+
+// Nhom hoa toan bo EventType (be/core/enums.py) ve 1 trong 7 nhom co dinh --
+// dung chung cho ca mau sac (CSS .log-entry.cat-*) lan bo loc chip, thay vi
+// to mau/dinh dang rieng cho tung loai event nhu thiet ke cu (rat loang).
+const EVENT_CATEGORY = {
+    HIRE: 'labor', FIRE: 'labor', WAGE_PAID: 'labor',
+    GOODS_PURCHASED: 'market', PRICE_ADJUSTED: 'market',
+    TAX_COLLECTED: 'fiscal', TAX_EVADED: 'fiscal', PENALTY_ENFORCED: 'fiscal', AUDIT_CONDUCTED: 'fiscal',
+    LOAN_DISBURSED: 'credit', LOAN_REPAID: 'credit', DEFAULT_OCCURRED: 'credit',
+    AGENT_BORN: 'lifecycle', AGENT_DIED: 'lifecycle', AGENT_BANKRUPT: 'lifecycle',
+    POLICY_SHOCK: 'policy',
+    STATE_UPDATE: 'system'
+};
+
+const CATEGORY_LABEL = {
+    labor: 'LAO ĐỘNG', market: 'THỊ TRƯỜNG', fiscal: 'TÀI KHOÁ',
+    credit: 'TÍN DỤNG', lifecycle: 'VÒNG ĐỜI', policy: 'CHÍNH SÁCH', system: 'HỆ THỐNG'
+};
+
+// 1 QUY CHUAN DUY NHAT cho moi loai event -- moi nhanh if/else rieng le nhu
+// truoc (dan den bug p.hidden_pct khong ton tai) duoc gop thanh 1 bang tra
+// cuu duy nhat, moi loai event PHAI duoc xu ly tuong minh (khong con fallback
+// JSON.stringify tho cho cac event thuong gap nhu HIRE/FIRE/LOAN_REPAID...).
+function describeEvent(e) {
+    const p = e.payload || {};
+    const src = (e.source || '').toUpperCase();
+    const tgt = (e.target || '').toUpperCase();
+    switch (e.type) {
+        case 'HIRE': return `${src} tuyển ${tgt} — lương $${p.wage ?? 0}`;
+        case 'FIRE': return `${src} sa thải ${tgt}`;
+        case 'WAGE_PAID': return `${src} trả lương ${tgt}: $${(typeof p.amount === 'number' ? p.amount.toFixed(1) : p.amount ?? 0)}`;
+        case 'GOODS_PURCHASED': return `${src} mua hàng từ thị trường: $${p.amount ?? 0}`;
+        case 'PRICE_ADJUSTED': return `Thị trường điều chỉnh giá — ${JSON.stringify(p)}`;
+        case 'TAX_COLLECTED': return `Kho bạc thu thuế kỳ này: $${p.amount ?? 0}`;
+        case 'TAX_EVADED':
+            if (p.gross !== undefined) return `${src} khai thiếu thu nhập (gross $${p.gross}), trốn $${p.amount} thuế`;
+            return `${src} khai thiếu lợi nhuận (lãi $${p.profit}), trốn $${p.amount} thuế DN`;
+        case 'PENALTY_ENFORCED': return `Thanh tra phạt ${tgt}: $${p.fine} (thuế trốn $${p.evaded})`;
+        case 'AUDIT_CONDUCTED': return `Thanh tra kiểm toán ${tgt || src}`;
+        case 'LOAN_DISBURSED': return `Ngân hàng ${src} giải ngân cho ${tgt}: $${p.amount ?? 0}`;
+        case 'LOAN_REPAID': return `${src} trả nợ ngân hàng: $${p.amount ?? 0}`;
+        case 'DEFAULT_OCCURRED': return `${src} vỡ nợ — nợ xấu $${p.bad_debt ?? p.amount ?? 0}`;
+        case 'AGENT_BORN': {
+            const skillTxt = typeof p.skill === 'number' ? p.skill.toFixed(2) : p.skill;
+            const parentTxt = p.parent_id ? `, thừa kế từ ${String(p.parent_id).toUpperCase()}` : '';
+            return `${tgt} gia nhập xã hội (vốn mồi $${p.cash}, kỹ năng ${skillTxt}${parentTxt})`;
+        }
+        case 'AGENT_DIED': return `${src} qua đời lúc ${p.age} tuổi [${p.reason ?? 'không rõ lý do'}]. Di sản thu về Kho bạc`;
+        case 'AGENT_BANKRUPT': {
+            const recovered = p.recovered !== undefined ? ` (thu hồi $${p.recovered})` : '';
+            return `${src} giải thể — ${tgt || 'ngân hàng'} ghi nhận nợ xấu $${p.bad_debt}${recovered}`;
+        }
+        case 'POLICY_SHOCK': return `Can thiệp chính sách: Thuế CN ${p.worker_tax}%, Thuế DN ${p.firm_tax}%, Lãi suất ${p.lending_rate}%, Sàn sống $${p.living_cost}`;
+        default: return `${src} → ${tgt} | ${JSON.stringify(p)}`;
+    }
+}
 
 const AGENT_COLORS = {
     'government': '#f85149', 'gov': '#f85149',
@@ -89,18 +149,19 @@ function resetHistoryAndLogs() {
     state.history.months = [];
     state.history.gdp = [];
     state.history.gini = [];
+    state.trendSnapshot = null;
     if (macroChart) {
         macroChart.data.labels = [];
         macroChart.data.datasets[0].data = [];
         macroChart.data.datasets[1].data = [];
         macroChart.update();
     }
-    const bulletinStream = document.getElementById('bulletin-stream-container');
-    const ledgerStream = document.getElementById('ledger-stream-container');
-    if (bulletinStream) bulletinStream.innerHTML = '<div class="empty-log-hint">No events yet — press RUN to start the simulation.</div>';
-    if (ledgerStream) ledgerStream.innerHTML = '<div class="empty-log-hint">No transactions yet.</div>';
+    const trendStream = document.getElementById('trend-stream-container');
+    const detailStream = document.getElementById('detail-stream-container');
+    if (trendStream) trendStream.innerHTML = '<div class="empty-log-hint">Chưa có dữ liệu xu hướng — nhấn RUN để bắt đầu (digest mỗi 12 tháng).</div>';
+    if (detailStream) detailStream.innerHTML = '<div class="empty-log-hint">Chưa có sự kiện nào.</div>';
     const countEl = document.getElementById('log-count');
-    if (countEl) countEl.innerText = '0 events';
+    if (countEl) countEl.innerText = '0 sự kiện';
 }
 
 function initControlButtons() {
@@ -428,6 +489,8 @@ function updateDashboardUI(payload) {
             macroChart.data.datasets[1].data = state.history.gini;
             macroChart.update('none');
         }
+
+        maybeEmitTrendDigest(payload);
     }
 
     state.agents = payload.agents || {};
@@ -515,7 +578,7 @@ function updateDashboardUI(payload) {
     const currentTickLinks = [];
     if (payload.events && payload.events.length > 0) {
         payload.events.forEach(e => {
-            appendLog(e);
+            appendDetailLog(e);
             const isCritical = ['HIRE', 'FIRE', 'WAGE_PAID', 'LOAN_DISBURSED', 'PENALTY_ENFORCED'].includes(e.type);
             if (isCritical && e.source && e.target && existingNodeIds.has(e.source) && existingNodeIds.has(e.target)) {
                 currentTickLinks.push({ source: e.source, target: e.target, type: e.type });
@@ -532,90 +595,135 @@ function updateDashboardUI(payload) {
 }
 
 // ==============================================================================
-// 6. DUAL-STREAM LOG FORMATTER (BOC TACH CHI TIET THE CHE)
+// 6. LOG THEO 2 MUC DICH: XU HUONG (digest dinh ky) + CHI TIET (1 quy chuan)
 // ==============================================================================
-function appendLog(e) {
-    const isBulletin = [
-        'POLICY_SHOCK', 'AGENT_DIED', 'AGENT_BANKRUPT', 
-        'PENALTY_ENFORCED', 'TAX_EVADED', 'AGENT_BORN'
-    ].includes(e.type);
 
-    const streamId = isBulletin ? 'bulletin-stream-container' : 'ledger-stream-container';
-    const stream = document.getElementById(streamId);
+// --- Tab "Chi tiết": append 1 dong/event, 1 QUY CHUAN DUY NHAT ---
+function appendDetailLog(e) {
+    const stream = document.getElementById('detail-stream-container');
     if (!stream) return;
 
     const placeholder = stream.querySelector('.empty-log-hint');
     if (placeholder) placeholder.remove();
 
-    let textContent = '';
-    const p = e.payload || {};
-
-    // Dinh dang cau van co nghia ro rang cho tung loai bien co
-    if (e.type === 'POLICY_SHOCK') {
-        textContent = `[M${e.timestep}] CHÍNH SÁCH: Cầm quyền áp đặt Shock: Thuế CN ${p.worker_tax}%, Thuế DN ${p.firm_tax}%, Lãi suất ${p.lending_rate}%, Sàn sống $${p.living_cost}`;
-    } else if (e.type === 'TAX_EVADED') {
-        const sourceLabel = e.source.toUpperCase();
-        // Payload thực tế chỉ chứa amount (thuế trốn) + gross/profit tuyệt đối,
-        // KHÔNG có hidden_pct -- không suy diễn tỉ lệ % để tránh hiển thị sai.
-        if (p.gross !== undefined) {
-            textContent = `[M${e.timestep}] GIAN LẬN: ${sourceLabel} khai thiếu thu nhập (Gross $${p.gross}), trốn $${p.amount} tiền thuế!`;
-        } else {
-            textContent = `[M${e.timestep}] GIAN LẬN: ${sourceLabel} khai thiếu lợi nhuận (Lãi $${p.profit}), trốn $${p.amount} thuế DN!`;
-        }
-    } else if (e.type === 'PENALTY_ENFORCED') {
-        textContent = `[M${e.timestep}] XỬ PHẠT: Thanh tra bắt quả tang ${e.target.toUpperCase()}, phạt $${p.fine} (Thuế trốn: $${p.evaded})!`;
-    } else if (e.type === 'AGENT_DIED') {
-        textContent = `[M${e.timestep}] KHAI TỬ: ${e.source.toUpperCase()} qua đời lúc ${p.age} tuổi [Lý do: ${p.reason}]. Di sản thu về Kho bạc.`;
-    } else if (e.type === 'AGENT_BANKRUPT') {
-        const recovered = p.recovered !== undefined ? ` (thu hồi được $${p.recovered})` : '';
-        textContent = `[M${e.timestep}] VỠ NỢ: ${e.source.toUpperCase()} giải thể, ${e.target.toUpperCase()} ghi nhận nợ xấu $${p.bad_debt}${recovered}!`;
-    } else if (e.type === 'AGENT_BORN') {
-        textContent = `[M${e.timestep}] SINH MỚI: ${e.target.toUpperCase()} gia nhập xã hội (Vốn mồi $${p.cash}, Kỹ năng: ${p.skill.toFixed(2)})`;
-    } else if (e.type === 'WAGE_PAID') {
-        textContent = `[M${e.timestep}] LƯƠNG: ${e.source.toUpperCase()} trả lương cho ${e.target.toUpperCase()} số tiền $${p.amount.toFixed(1)}`;
-    } else if (e.type === 'LOAN_DISBURSED') {
-        textContent = `[M${e.timestep}] TÍN DỤNG: Ngân hàng giải ngân cho ${e.target.toUpperCase()} vay $${p.amount.toFixed(1)}`;
-    } else {
-        textContent = `[M${e.timestep}] ${e.type}: ${e.source} -> ${e.target} | ${JSON.stringify(p)}`;
-    }
+    const category = EVENT_CATEGORY[e.type] || 'system';
+    const label = CATEGORY_LABEL[category] || 'HỆ THỐNG';
+    const textContent = `[M${e.timestep}] ${label} — ${describeEvent(e)}`;
 
     const entry = document.createElement('div');
-    entry.className = `log-entry ${e.type}`;
+    entry.className = `log-entry cat-${category}`;
+    entry.dataset.cat = category;
     entry.innerText = textContent;
+    if (state.logFilter !== 'all' && state.logFilter !== category) {
+        entry.classList.add('hidden-by-filter');
+    }
     stream.prepend(entry);
 
-    if (stream.children.length > 150) {
+    if (stream.children.length > 200) {
         stream.removeChild(stream.lastChild);
     }
 
     const countEl = document.getElementById('log-count');
     if (countEl) {
-        const total = document.querySelectorAll('.log-entry').length;
-        countEl.innerText = `${total} events`;
+        const total = document.querySelectorAll('#detail-stream-container .log-entry').length;
+        countEl.innerText = `${total} sự kiện`;
     }
 }
 
-function initLogTabs() {
-    const btnBulletin = document.getElementById('tab-bulletin');
-    const btnLedger = document.getElementById('tab-ledger');
-    const streamBulletin = document.getElementById('bulletin-stream-container');
-    const streamLedger = document.getElementById('ledger-stream-container');
+// --- Tab "Xu hướng": digest ĐỊNH KỲ (mỗi 12 tháng = 1 năm mô phỏng), so
+// sánh với snapshot lần trước thay vì hiển thị từng event thô ---
+const TREND_PERIOD_MONTHS = 12;
 
-    if (btnBulletin && btnLedger) {
-        btnBulletin.addEventListener('click', () => {
-            btnBulletin.classList.add('active');
-            btnLedger.classList.remove('active');
-            streamBulletin.style.display = 'flex';
-            streamLedger.style.display = 'none';
+function fmtTrendDelta(curr, prev, unit, goodDirection) {
+    const diff = curr - prev;
+    if (Math.abs(diff) < 1e-9) return `<span class="trend-delta neutral">±0${unit}</span>`;
+    const sign = diff > 0 ? '+' : '';
+    const isGood = (goodDirection === 'up' && diff > 0) || (goodDirection === 'down' && diff < 0);
+    const cls = goodDirection === 'neutral' ? 'neutral' : (isGood ? 'up-good' : 'up-bad');
+    return `<span class="trend-delta ${cls}">${sign}${diff.toFixed(1)}${unit}</span>`;
+}
+
+function renderTrendDigest(prev, curr) {
+    const stream = document.getElementById('trend-stream-container');
+    if (!stream) return;
+    const placeholder = stream.querySelector('.empty-log-hint');
+    if (placeholder) placeholder.remove();
+
+    const year = Math.floor(curr.timestep / TREND_PERIOD_MONTHS);
+    const card = document.createElement('div');
+    card.className = 'trend-card';
+    card.innerHTML = `
+        <div class="trend-title">Năm ${year} · Tháng ${curr.timestep}</div>
+        <div class="trend-row">
+            <span class="trend-metric">GDP $${Math.round(curr.gdp).toLocaleString()} ${fmtTrendDelta(curr.gdp, prev.gdp, '', 'up')}</span>
+            <span class="trend-metric">Gini ${curr.gini.toFixed(3)} ${fmtTrendDelta(curr.gini, prev.gini, '', 'down')}</span>
+            <span class="trend-metric">Thất nghiệp ${curr.unemployment.toFixed(1)}% ${fmtTrendDelta(curr.unemployment, prev.unemployment, 'đ', 'down')}</span>
+            <span class="trend-metric">NPL ${curr.nplRatio.toFixed(1)}% ${fmtTrendDelta(curr.nplRatio, prev.nplRatio, 'đ', 'down')}</span>
+            <span class="trend-metric">Firm ${curr.firms} ${fmtTrendDelta(curr.firms, prev.firms, '', 'neutral')}</span>
+            <span class="trend-metric">Dân số ${curr.population} ${fmtTrendDelta(curr.population, prev.population, '', 'neutral')}</span>
+        </div>`;
+    stream.prepend(card);
+
+    if (stream.children.length > 60) {
+        stream.removeChild(stream.lastChild);
+    }
+}
+
+function maybeEmitTrendDigest(payload) {
+    if (!payload.timestep || payload.timestep % TREND_PERIOD_MONTHS !== 0) return;
+    const m = payload.macro || {};
+    const snapshot = {
+        timestep: payload.timestep,
+        gdp: Number(m.gdp) || 0,
+        gini: Number(m.gini) || 0,
+        unemployment: Number(m.unemployment_rate_pct) || 0,
+        nplRatio: Number(m.npl_ratio_pct) || 0,
+        firms: Number(m.active_firms) || 0,
+        population: Number(m.active_employees) || 0
+    };
+
+    if (state.trendSnapshot) {
+        renderTrendDigest(state.trendSnapshot, snapshot);
+    }
+    state.trendSnapshot = snapshot;
+}
+
+function initLogTabs() {
+    const btnTrend = document.getElementById('tab-trend');
+    const btnDetail = document.getElementById('tab-detail');
+    const streamTrend = document.getElementById('trend-stream-container');
+    const streamDetail = document.getElementById('detail-stream-container');
+    const filterRow = document.getElementById('log-filter-row');
+
+    if (btnTrend && btnDetail) {
+        btnTrend.addEventListener('click', () => {
+            btnTrend.classList.add('active');
+            btnDetail.classList.remove('active');
+            streamTrend.style.display = 'flex';
+            streamDetail.style.display = 'none';
+            if (filterRow) filterRow.style.display = 'none';
         });
 
-        btnLedger.addEventListener('click', () => {
-            btnLedger.classList.add('active');
-            btnBulletin.classList.remove('active');
-            streamBulletin.style.display = 'none';
-            streamLedger.style.display = 'flex';
+        btnDetail.addEventListener('click', () => {
+            btnDetail.classList.add('active');
+            btnTrend.classList.remove('active');
+            streamTrend.style.display = 'none';
+            streamDetail.style.display = 'flex';
+            if (filterRow) filterRow.style.display = 'flex';
         });
     }
+
+    document.querySelectorAll('.log-filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.log-filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            const cat = chip.dataset.cat;
+            state.logFilter = cat;
+            document.querySelectorAll('#detail-stream-container .log-entry').forEach(entry => {
+                entry.classList.toggle('hidden-by-filter', cat !== 'all' && entry.dataset.cat !== cat);
+            });
+        });
+    });
 }
 
 // ==============================================================================

@@ -10,16 +10,27 @@ class Employee(BaseAgent):
     - Tiep nhan dong bo status va skill_delta tu RuleEngine.
     - Ham Reward phat that nghiep lien tuc de tao dong luc tim viec.
     """
-    def __init__(self, agent_id: str):
+    def __init__(self, agent_id: str, death_penalty_base: float = 100.0,
+                 death_penalty_horizon_multiplier: float = 1.0):
         super().__init__(agent_id)
         self.agent_type = AgentType.EMPLOYEE
-        
+
         # Dac tinh noi tai
         self.skill_level: float = 1.0
         self.risk_aversion: float = 0.5
         self.tax_morale: float = 0.8
         self.age: int = 20
         self.max_age: int = 75
+
+        # He so hieu chinh reward tu vong (calibration constants, xem
+        # calculate_reward) -- co the cau hinh qua ScenarioConfig, KHONG doi
+        # dang ham reward, chi doi gia tri hang so dau vao. Truyen o
+        # constructor (khong phai initialize()) vi Employee duoc tao lai moi
+        # lan reset()/sinh san va he so calibration khong nen thay doi giua
+        # cac episode, phai giu dung theo scenario dang chay -- cung pattern
+        # da dung cho Government.gini_penalty_coef/death_penalty_coef.
+        self.death_penalty_base: float = float(death_penalty_base)
+        self.death_penalty_horizon_multiplier: float = float(death_penalty_horizon_multiplier)
         
         # Chi so tai chinh va the ly
         self.cash: float = 0.0
@@ -28,6 +39,13 @@ class Employee(BaseAgent):
         # hàng (cùng logic relationship banking như Firm.creditor_bank_id, xem
         # Petersen & Rajan, 1994).
         self.depository_bank_id: Optional[str] = None
+        # Metadata thuan tuy phuc vu truy vet pha he cho nghien cuu (KHONG
+        # thuoc observation/action space, khong anh huong bat ky cong thuc
+        # kinh te nao) -- agent_id cua cha/me neu sinh ra qua co che tai san
+        # xuat noi sinh Sugarscape (Epstein & Axtell, 1996, xem env.py Section
+        # A); None neu sinh ra qua nhanh an sinh khan cap hoac la the he goc
+        # luc khoi tao simulation.
+        self.parent_id: Optional[str] = None
         self.energy: float = 1.0
         self.employed_by: Optional[str] = None
         self.wage: float = 0.0
@@ -163,7 +181,29 @@ class Employee(BaseAgent):
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         if self.status in [LifeCycleStatus.TERMINATED, LifeCycleStatus.DECEASED]:
-            return -100.0
+            # HÌNH PHẠT TỬ VONG QUY MÔ THEO QUÃNG ĐỜI CÒN LẠI -- Viscusi &
+            # Aldy (2003); Aldy & Viscusi (2008) (xem trích dẫn đầy đủ tại nơi
+            # tính death_remaining_horizon_ratio, rule_engine.py Section 9).
+            # Phát hiện qua audit (test_death_math.py, xét trên toàn bộ công
+            # thức thật): một agent thất nghiệp có thu nhập phi chính thức đủ
+            # sống (≈0.8-1.2x living_cost) có thể tích lũy TỔNG phạt âm hơn
+            # NHIỀU LẦN so với mức chết cố định -100 (vì RLlib
+            # MultiAgentEpisode.get_return() CỘNG DỒN toàn bộ phần thưởng
+            # trong vòng đời, không loại trừ theo kiểu survivorship) -- khiến
+            # "chết sớm" trông rẻ hơn "sống khổ kéo dài" một cách phi lý. Chết
+            # ở đúng max_age (hết tuổi thọ tự nhiên, không còn quãng đời nào
+            # để mất) giữ nguyên đúng -100 (ratio=0); chết càng trẻ (còn nhiều
+            # quãng đời lẽ ra được sống) thì phạt càng nặng, tối đa gấp
+            # (1 + multiplier) lần. death_penalty_horizon_multiplier mặc định
+            # 1.0 là lựa chọn THẬN TRỌNG ban đầu (biên trên -200), KHÔNG phải
+            # con số suy ra để triệt tiêu hoàn toàn kịch bản tệ nhất đã đo
+            # (-854) -- cố ý để trống làm ScenarioConfig field, hiệu chỉnh lại
+            # bằng dữ liệu training thật SAU KHI Mục 1/3/4 (NPL write-off,
+            # headcount bonus gating, hire cap) đã chạy, thay vì suy luận từ
+            # một kịch bản giả lập 400 tháng chưa chắc còn xảy ra trong
+            # equilibrium đã cải thiện.
+            horizon_ratio = float(transition_result.state_delta.get("death_remaining_horizon_ratio", 0.0))
+            return float(-self.death_penalty_base * (1.0 + self.death_penalty_horizon_multiplier * horizon_ratio))
 
         # Utility tiêu dùng CRRA: scale bằng log để tránh số cực lớn
         # ln(consumption) đơn giản hơn và stable hơn CRRA khi consumption dao động mạnh
@@ -195,7 +235,8 @@ class Employee(BaseAgent):
             "wage": round(self.wage, 1),
             "debt": self.debt,
             "age": self.age,
-            "unemployed_streak": self.unemployed_streak
+            "unemployed_streak": self.unemployed_streak,
+            "parent_id": self.parent_id
         }
 
     def reset(self) -> None:
@@ -203,6 +244,7 @@ class Employee(BaseAgent):
         self.cash = 0.0
         self.bank_deposit = 0.0
         self.depository_bank_id = None
+        self.parent_id = None
         self.energy = 1.0
         self.employed_by = None
         self.wage = 0.0

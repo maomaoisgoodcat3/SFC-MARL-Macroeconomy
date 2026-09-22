@@ -555,9 +555,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     padding: var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-3);
 }
 
-/* LOGS STREAM PANEL */
+/* LOGS STREAM PANEL -- 2 tab theo MUC DICH (khong phai theo "muc do quan
+   trong" nhu thiet ke cu): Xu huong = digest dinh ky, Chi tiet = moi su
+   kien theo 1 quy chuan dong nhat, loc duoc theo nhom (category chip). */
 .logs-card {
-    max-height: 208px;
+    max-height: 260px;
 }
 
 .log-tab-buttons {
@@ -580,6 +582,28 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .tab-btn:hover { color: var(--text-primary); }
 .tab-btn.active { color: var(--accent-strong); background: var(--accent-soft); }
 
+.log-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px var(--sp-3) 0 var(--sp-3);
+}
+.log-filter-chip {
+    background: var(--bg-surface-alt);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+.log-filter-chip:hover { color: var(--text-primary); }
+.log-filter-chip.active { color: var(--accent-strong); border-color: var(--accent); background: var(--accent-soft); }
+
 .log-stream {
     height: 148px;
     overflow-y: auto;
@@ -590,7 +614,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     flex-direction: column; /* JS dùng prepend() để item mới nhất lên đầu DOM */
     gap: 4px;
 }
+.log-stream.has-filter-row { height: 118px; }
 
+/* --- Tab "Chi tiết": 1 quy chuẩn duy nhất, mau theo NHOM (category), khong
+   theo tung loai event rieng le nhu truoc (tranh 7+ mau roi rac gay loan) */
 .log-entry {
     color: var(--text-secondary);
     border-left: 2px solid var(--border-subtle);
@@ -598,16 +625,39 @@ button:focus-visible, input:focus-visible, select:focus-visible {
     word-break: break-word;
     line-height: 1.4;
 }
-.log-entry.WAGE_PAID       { border-left-color: var(--accent); color: var(--text-primary); }
-.log-entry.HIRE            { border-left-color: var(--success); color: var(--success); }
-.log-entry.FIRE            { border-left-color: var(--danger); color: var(--danger); }
-.log-entry.TAX_EVADED      { border-left-color: var(--warning); color: var(--warning); }
-.log-entry.PENALTY_ENFORCED{ border-left-color: var(--purple); color: var(--purple); }
-.log-entry.AGENT_BORN      { border-left-color: var(--success); color: var(--text-primary); }
-.log-entry.AGENT_DIED      { border-left-color: var(--text-muted); color: var(--text-muted); }
-.log-entry.AGENT_BANKRUPT  { border-left-color: var(--danger); color: var(--danger); }
-.log-entry.POLICY_SHOCK    { border-left-color: var(--purple); color: var(--purple); font-weight: 600; }
-.log-entry.LOAN_DISBURSED  { border-left-color: var(--bank, var(--warning)); color: var(--warning); }
+.log-entry.cat-labor      { border-left-color: var(--accent); }
+.log-entry.cat-market     { border-left-color: var(--success); }
+.log-entry.cat-fiscal     { border-left-color: var(--warning); }
+.log-entry.cat-credit     { border-left-color: var(--bank, var(--warning)); }
+.log-entry.cat-lifecycle  { border-left-color: var(--danger); }
+.log-entry.cat-policy     { border-left-color: var(--purple); font-weight: 600; }
+.log-entry.cat-system     { border-left-color: var(--text-muted); color: var(--text-muted); }
+.log-entry.hidden-by-filter { display: none; }
+
+/* --- Tab "Xu hướng": mỗi digest là 1 khối hộp riêng biệt, không phải 1
+   dòng kẻ trái đơn thuần -- phân biệt rõ ràng đây là TÓM TẮT, không phải
+   sự kiện thô. */
+.trend-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-sm);
+    padding: 6px 9px;
+    background: var(--bg-surface-alt);
+}
+.trend-card .trend-title {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 10.5px;
+    margin-bottom: 3px;
+}
+.trend-card .trend-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 10px;
+}
+.trend-metric { white-space: nowrap; }
+.trend-metric .trend-delta.up-good, .trend-metric .trend-delta.down-good { color: var(--success); }
+.trend-metric .trend-delta.up-bad, .trend-metric .trend-delta.down-bad { color: var(--danger); }
+.trend-metric .trend-delta.neutral { color: var(--text-muted); }
 
 .empty-log-hint {
     color: var(--text-muted);

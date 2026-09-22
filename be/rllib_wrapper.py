@@ -1,13 +1,16 @@
 from typing import Dict, Any, Tuple, Optional
+from dataclasses import fields
 import numpy as np
 from gymnasium.spaces import Box
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 
 from be.env import MacroEnvironment
+from be.scenario_config import ScenarioConfig
 from be.core.enums import LifeCycleStatus
 from be.agents.employee import Employee
 from be.agents.firm import Firm
+from be.agents.bank import compute_npl_ratio_pct
 
 # ==============================================================================
 # KHONG GIAN QUAN SAT (OBSERVATION SPACES)
@@ -29,8 +32,12 @@ FIRM_ACT_SPACE = Box(
     dtype=np.float32
 )
 GOVERNMENT_ACT_SPACE = Box(
+    # [2]: purchase_ratio rho [0, 1] -- ty le thu thue+phat ky truoc dung de CHI MUA HANG
+    # (rule_engine.py Section 4C; Godley & Lavoie, 2007, mo hinh SIM). DA DOI tu [0, 0.4]
+    # ("subsidy_budget_ratio" cu, hanh dong CHET). PHAI khop chinh xac bien trong
+    # Government.validate_action(), neu khong policy bi RLlib gioi han sai khoang.
     low=np.array([0.0, 0.0, 0.0], dtype=np.float32),
-    high=np.array([0.5, 0.5, 0.4], dtype=np.float32),
+    high=np.array([0.5, 0.5, 1.0], dtype=np.float32),
     dtype=np.float32
 )
 BANK_ACT_SPACE = Box(
@@ -44,8 +51,14 @@ SUPERVISOR_ACT_SPACE = Box(
     dtype=np.float32
 )
 ECONOMY_ACT_SPACE = Box(
-    low=np.array([0.90, 0.90, 0.0], dtype=np.float32),
-    high=np.array([1.10, 1.10, 10.0], dtype=np.float32),
+    # [0]: demand_injection_ratio [-0.20, 0.20] -- Blanchard & Perotti (2002),
+    # xem rule_engine.py Section 4B / economy.py validate_action(). ĐÃ ĐỔI từ
+    # [0.90, 1.10] ("living_cost_factor" cũ, action chết -- xem CLAUDE.md).
+    # PHẢI khớp CHÍNH XÁC biên trong Economy.validate_action(), nếu không
+    # policy sẽ bị RLlib giới hạn sai khoảng rồi bị validate_action kẹp cứng
+    # về 1 giá trị duy nhất, vô hiệu hóa hoàn toàn khả năng điều khiển 2 chiều.
+    low=np.array([-0.20, 0.90, 0.0], dtype=np.float32),
+    high=np.array([0.20, 1.10, 10.0], dtype=np.float32),
     dtype=np.float32
 )
 
@@ -76,17 +89,20 @@ class RLlibMacroEnv(MultiAgentEnv):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__()
         cfg = config or {}
-        self.num_employees = cfg.get("num_employees", 50)
-        self.num_firms = cfg.get("num_firms", 5)
-        self.num_banks = cfg.get("num_banks", 1)
-        self.max_steps = cfg.get("max_steps", 240)
+        # env_config den tu ScenarioConfig.to_env_kwargs() (be/main.py) va co
+        # THE chua them cac key noi bo khac cua RLlib -- chi loc dung cac
+        # truong ma ScenarioConfig biet, con lai dung mac dinh cua dataclass
+        # (xem be/scenario_config.py) de an toan voi moi phien ban env_config cu/moi.
+        scenario_field_names = {f.name for f in fields(ScenarioConfig)}
+        scenario_kwargs = {k: v for k, v in cfg.items() if k in scenario_field_names}
+        scenario = ScenarioConfig(**scenario_kwargs)
 
-        self.env = MacroEnvironment(
-            num_employees=self.num_employees,
-            num_firms=self.num_firms,
-            num_banks=self.num_banks,
-            max_steps=self.max_steps
-        )
+        self.num_employees = scenario.num_employees
+        self.num_firms = scenario.num_firms
+        self.num_banks = scenario.num_banks
+        self.max_steps = scenario.max_steps
+
+        self.env = MacroEnvironment(**scenario.to_env_kwargs())
 
         all_ids = ["gov_1", "eco_1", "sup_1"]
         all_ids.extend([f"bank_{i}" for i in range(self.num_banks)])
@@ -102,11 +118,10 @@ class RLlibMacroEnv(MultiAgentEnv):
         # Lay truc tiep danh sach cac tac tu dang ton tai thuc te trong env
         self.agents = list(self.env.agents.keys())
 
-        sanitized_obs: Dict[str, np.ndarray] = {}
-        for agent_id, obs_vec in raw_obs.items():
-            sanitized_obs[agent_id] = np.nan_to_num(obs_vec, nan=0.0, posinf=1000.0, neginf=-1000.0).astype(np.float32)
-
-        return sanitized_obs, infos
+        # Quan sat DA duoc MacroEnvironment lam sach (sanitize_observation) -- wrapper
+        # chi chuyen tiep, KHONG tu lam sach lai: train (RLlib), simulate va server phai
+        # chia se DUNG MOT logic (be/env.py), khong nhan ban logic o nhieu noi.
+        return raw_obs, infos
 
     def step(self, action_dict: Dict[str, np.ndarray]) -> Tuple[
         Dict[str, np.ndarray], 
@@ -115,25 +130,16 @@ class RLlibMacroEnv(MultiAgentEnv):
         Dict[str, bool], 
         Dict[str, Any]
     ]:
-        sanitized_actions: Dict[str, np.ndarray] = {}
-        for agent_id, act in action_dict.items():
-            sanitized_actions[agent_id] = np.nan_to_num(act, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32)
-
-        obs, rewards, terminateds, truncateds, infos = self.env.step(sanitized_actions)
-
-        clean_obs: Dict[str, np.ndarray] = {}
-        for agent_id, obs_vec in obs.items():
-            clean_obs[agent_id] = np.nan_to_num(obs_vec, nan=0.0, posinf=1000.0, neginf=-1000.0).astype(np.float32)
-
-        clean_rewards: Dict[str, float] = {}
-        for agent_id, r in rewards.items():
-            val = float(r)
-            clean_rewards[agent_id] = 0.0 if (np.isnan(val) or np.isinf(val)) else float(np.clip(val, -100.0, 100.0))
+        # Lam sach action/obs/reward (NaN, Inf, chuan hoa + kep reward) nam TRONG
+        # MacroEnvironment.step() -- xem be/env.py. Truoc day lop nay tu kep reward
+        # cung +-100 (loi that: cat mat hinh phat tu vong theo tuoi, -122,11 -> -100,00)
+        # va CHI duong train di qua, con simulate/server thi khong -> hai logic khac nhau.
+        obs, rewards, terminateds, truncateds, infos = self.env.step(action_dict)
 
         # Cap nhat self.agents chi chua cac tac tu hien con song (chua bi bao cao dead)
         self.agents = list(self.env.agents.keys())
 
-        return clean_obs, clean_rewards, terminateds, truncateds, infos
+        return obs, rewards, terminateds, truncateds, infos
 
 class InstitutionalMetricsCallback(DefaultCallbacks):
     """
@@ -162,6 +168,42 @@ class InstitutionalMetricsCallback(DefaultCallbacks):
         episode.custom_metrics["living_cost"] = float(sub_env.eco.base_living_cost)
         episode.custom_metrics["housing_price"] = float(sub_env.eco.housing_price)
 
+        # --- Thi truong lao dong: ty le that nghiep + luong trung binh ---
+        # (unemployed = active_emp - employed; dung getattr cho an toan neu
+        # agent chua qua initialize()).
+        employed_emps = [
+            a for a in sub_env.agents.values()
+            if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE
+            and getattr(a, "employed_by", None) is not None
+        ]
+        episode.custom_metrics["employed_count"] = float(len(employed_emps))
+        episode.custom_metrics["unemployment_rate"] = float(
+            1.0 - (len(employed_emps) / max(active_emp, 1))
+        )
+        episode.custom_metrics["avg_wage"] = float(
+            np.mean([getattr(e, "wage", 0.0) for e in employed_emps])
+        ) if employed_emps else 0.0
+
+        # --- Ngan hang: NPL theo TY LE tren tong du no (khong phai NPL/Reserves
+        # -- Reserves khong phai mau so dung, xem thao luan voi Claude Web) ---
+        total_loans = sum(b.total_loans for b in sub_env.banks)
+        total_npl = sum(b.non_performing_loans for b in sub_env.banks)
+        episode.custom_metrics["bank_total_loans"] = float(total_loans)
+        episode.custom_metrics["npl_ratio_pct"] = compute_npl_ratio_pct(total_npl, total_loans)
+
+        # --- Suc khoe doanh nghiep ---
+        active_firms_list = [
+            a for a in sub_env.agents.values()
+            if isinstance(a, Firm) and a.status == LifeCycleStatus.ACTIVE
+        ]
+        episode.custom_metrics["avg_firm_profit"] = float(
+            np.mean([getattr(f, "last_profit", 0.0) for f in active_firms_list])
+        ) if active_firms_list else 0.0
+
+        # --- Lam phat + nhan khau hoc ---
+        episode.custom_metrics["inflation_pct"] = float(sub_env.eco.inflation_rate * 100.0)
+        episode.custom_metrics["births_this_step"] = float(getattr(sub_env, "births_this_step", 0))
+
     def on_episode_end(self, *, worker, base_env, policies, episode, env_index, **kwargs):
         emp_series = episode.user_data.get("active_employees_series", [])
         frm_series = episode.user_data.get("active_firms_series", [])
@@ -170,3 +212,79 @@ class InstitutionalMetricsCallback(DefaultCallbacks):
             episode.custom_metrics["mean_active_employees"] = float(np.mean(emp_series))
         if frm_series:
             episode.custom_metrics["mean_active_firms"] = float(np.mean(frm_series))
+
+# ==============================================================================
+# CAU HINH PPO DUNG CHUNG CHO TRAIN (be/main.py) VA SUY LUAN/SIMULATE (be/server.py)
+# ==============================================================================
+# Truoc day be/main.py va be/server.py MOI NOI TU DUNG chinh sach + PPOConfig rieng
+# (server chi khai bao model). Nhan ban nhu vay de dan toi lech logic am tham khi mot
+# ben doi (vd. kich thuoc mang) ma ben kia khong biet -- checkpoint se sai shape hoac
+# tro nen vo nghia. Gom ve MOT nguon: doi o day thi ca hai cung doi.
+POLICY_MODEL_CONFIG: Dict[str, Any] = {"fcnet_hiddens": [64, 64]}
+
+# vf_clip_param: RLlib PPO cat BINH PHUONG sai so critic tai nguong nay (vuot => gradient
+# = 0). 500 (gia tri cu) khien critic cua Government/Supervisor khong hoc trong ~20 lan
+# train that (vf_explained_var ~ 0,0; vf_loss 450-499 sat tran). Voi reward da chuan hoa
+# (MacroEnvironment.reward_scale, |return| p90 ~ 20) tran 2000 (|sai so| < ~44,7) chua
+# ~2x du dia cho return tang len khi policy tot hon. HE SO HIEU CHINH, khong phai cong
+# thuc. grad_clip=0.5 van gioi han do lon cap nhat.
+PPO_VF_CLIP_PARAM: float = 2000.0
+PPO_GRAD_CLIP: float = 0.5
+PPO_LR: float = 3e-4
+PPO_NUM_SGD_ITER: int = 10
+
+
+def build_policy_specs() -> Dict[str, Any]:
+    """Sáu policy dùng chung tham số theo nhóm (parameter sharing), cùng obs/action space."""
+    return {
+        "policy_employee": (None, EMPLOYEE_OBS_SPACE, EMPLOYEE_ACT_SPACE, {}),
+        "policy_firm": (None, FIRM_OBS_SPACE, FIRM_ACT_SPACE, {}),
+        "policy_government": (None, GOVERNMENT_OBS_SPACE, GOVERNMENT_ACT_SPACE, {}),
+        "policy_bank": (None, BANK_OBS_SPACE, BANK_ACT_SPACE, {}),
+        "policy_supervisor": (None, SUPERVISOR_OBS_SPACE, SUPERVISOR_ACT_SPACE, {}),
+        "policy_economy": (None, ECONOMY_OBS_SPACE, ECONOMY_ACT_SPACE, {}),
+    }
+
+
+def build_ppo_config(env_config: Dict[str, Any], *, num_env_runners: int, seed: Optional[int] = None,
+                     train_batch_size: Optional[int] = None, sgd_minibatch_size: Optional[int] = None,
+                     rollout_fragment_length: Optional[int] = None, with_callbacks: bool = True):
+    """PPOConfig DUY NHAT cho ca train va suy luan. Chi khac nhau o tham so van hanh
+    (so worker, batch size...) -- moi thu anh huong logic hoc/quan sat/hanh dong la chung."""
+    from ray.rllib.algorithms.ppo import PPOConfig  # import tre: tranh keo Ray khi chi can hang so
+
+    policies = build_policy_specs()
+    training_kwargs: Dict[str, Any] = dict(
+        num_sgd_iter=PPO_NUM_SGD_ITER,
+        model=POLICY_MODEL_CONFIG,
+        vf_clip_param=PPO_VF_CLIP_PARAM,
+        grad_clip=PPO_GRAD_CLIP,
+        lr=PPO_LR,
+    )
+    if train_batch_size is not None:
+        training_kwargs["train_batch_size"] = train_batch_size
+    if sgd_minibatch_size is not None:
+        training_kwargs["sgd_minibatch_size"] = sgd_minibatch_size
+
+    runner_kwargs: Dict[str, Any] = dict(num_env_runners=num_env_runners)
+    if rollout_fragment_length is not None:
+        runner_kwargs["rollout_fragment_length"] = rollout_fragment_length
+
+    config = (
+        PPOConfig()
+        .environment(env=RLlibMacroEnv, env_config=env_config)
+        .framework("torch")
+        .multi_agent(
+            policies=policies,
+            policy_mapping_fn=policy_mapping_fn,
+            policies_to_train=list(policies.keys()),
+        )
+        .training(**training_kwargs)
+        .resources(num_gpus=0)
+        .env_runners(**runner_kwargs)
+    )
+    if with_callbacks:
+        config = config.callbacks(InstitutionalMetricsCallback)
+    if seed is not None:
+        config = config.debugging(seed=seed)
+    return config

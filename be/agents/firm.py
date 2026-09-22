@@ -154,8 +154,21 @@ class Firm(BaseAgent):
         # Profit reward: scale 0.1 để profit ~20-50/month -> reward ~2-5 (positive signal rõ ràng)
         profit_reward = self.last_profit * 0.1
 
-        # Thưởng có headcount: khuyến khích thuê người
-        headcount_bonus = float(len(self.employee_ids)) * 0.5
+        # Thưởng tạo việc làm — CHỈ khi lợi nhuận dương (Mortensen, D. T., &
+        # Pissarides, C. A. (1994), "Job Creation and Job Destruction", Review
+        # of Economic Studies 61(3), 397-415 -- job creation là ngoại tác xã
+        # hội tích cực đáng được khuyến khích, cùng khung lý thuyết đã dùng
+        # cho điều kiện gia nhập ngành ở env.py). Trước bản vá này, bonus vô
+        # điều kiện (0.5 × headcount bất kể lãi/lỗ) tạo tín hiệu redundant và
+        # có thể XUNG ĐỘT với chính cơ chế MRPL đã có ở rule_engine.py Section
+        # 2: một firm thuê vượt mức MRPL biện minh (lợi nhuận âm do quỹ lương
+        # vượt doanh thu biên) vẫn có thể được thưởng ròng dương nếu
+        # headcount_bonus đủ lớn để bù profit_reward âm -- phát hiện qua audit
+        # thực nghiệm, không có cơ sở lý thuyết nào biện minh cho việc thưởng
+        # headcount KHÔNG ĐIỀU KIỆN. Gate theo last_profit > 0 giữ đúng tinh
+        # thần khuyến khích tạo việc làm nhưng chỉ khi việc đó thực sự bền
+        # vững về tài chính.
+        headcount_bonus = (float(len(self.employee_ids)) * 0.5) if self.last_profit > 0.0 else 0.0
 
         # Phạt đạo đức nếu trốn thuế
         moral_cost = 2.0 * self.tax_morale * ((1.0 - self.last_declare_ratio) ** 2)
