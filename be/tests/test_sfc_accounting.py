@@ -9,8 +9,10 @@ dong tien phat sinh tu tac tu nay deu phai la khoan chi tra/nhan vao cua tac
 tu khac; khong co tien sinh ra tu hu khong hoac bien mat khoi he thong, NGOAI
 TRU hai kenh duy nhat duoc thiet ke tuong minh (xem rule_engine.py):
 
-  1. DefaultedDebt: phan no khong the thu hoi duoc khi mot Firm pha san
-     (Merton, 1974) -- ton that tin dung thuc su cua ngan hang.
+  1. DefaultedDebt: phan no khong the thu hoi duoc -- ton that tin dung thuc su cua ngan
+     hang, tu HAI nguon: (a) Firm pha san (Merton, 1974, co thu hoi tai san the chap mot
+     phan) va (b) Employee chet con no tin dung tieu dung (Section 3B, v0.23 -- khong co
+     tai san the chap nen mat trang 100%).
   2. Capital depreciation (overhead, Jorgenson 1963): chi phi khau hao tu ban
      ma Firm phai tra nhung khong chuyen cho tac tu nao khac trong mo phong
      (dai dien chi phi mua sam/bao tri tu khu vuc ben ngoai khong duoc mo
@@ -59,7 +61,13 @@ def _total_system_value(env: MacroEnvironment) -> float:
     emp_deposits = sum(getattr(a, "bank_deposit", 0.0) for a in env.agents.values() if isinstance(a, Employee))
     firm_cash = sum(a.cash for a in env.agents.values() if isinstance(a, Firm))
     bank_reserves = sum(b.reserves for b in env.banks)
-    return env.gov.treasury + bank_reserves + firm_cash + emp_cash + emp_deposits
+    # LOI DA SUA (v0.24, phat hien TRUOC khi code qua kiem chung so hoc -- xem
+    # METHODOLOGY_NOTES.md muc 2): Economy.strategic_reserve_fund (quy binh on du tru dem) la
+    # MOT PHAN tien that cua he thong (cap tu Treasury luc reset) -- neu KHONG cong vao day, moi
+    # lan Economy chi tien tu quy (buffer-stock buy) se bao "ro ri" GIA vi tien chuyen noi bo
+    # (fund giam, firm_cash tang) khong duoc doi chieu dung.
+    economy_buffer_fund = getattr(env.eco, "strategic_reserve_fund", 0.0)
+    return env.gov.treasury + bank_reserves + firm_cash + emp_cash + emp_deposits + economy_buffer_fund
 
 
 def _run_sfc_audit(seed: int, num_employees: int, num_firms: int, num_banks: int, steps: int) -> None:
@@ -67,10 +75,15 @@ def _run_sfc_audit(seed: int, num_employees: int, num_firms: int, num_banks: int
 
     bad_debt_this_step: List[float] = [0.0]
 
-    def on_bankrupt(ev: Event) -> None:
+    def on_bad_debt(ev: Event) -> None:
         bad_debt_this_step[0] += float(ev.payload.get("bad_debt", 0.0))
 
-    env.event_bus.subscribe(EventType.AGENT_BANKRUPT, on_bankrupt)
+    # AGENT_BANKRUPT: Firm mất khả năng thanh toán (Merton, Section 8, co thu hoi tai san).
+    # AGENT_DIED: Employee chet con no tin dung tieu dung (Section 3B/9, v0.23) -- KHONG co
+    # tai san the chap nen la mat trang 100%, nhung CUNG kenh "DefaultedDebt" duoc phep trong
+    # dang thuc bao toan (xem docstring dau file) -- phai cong ca hai nguon vao cung bien dem.
+    env.event_bus.subscribe(EventType.AGENT_BANKRUPT, on_bad_debt)
+    env.event_bus.subscribe(EventType.AGENT_DIED, on_bad_debt)
 
     env.reset(seed=seed)
     prev_total = _total_system_value(env)

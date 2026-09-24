@@ -39,6 +39,12 @@ class Employee(BaseAgent):
         # hàng (cùng logic relationship banking như Firm.creditor_bank_id, xem
         # Petersen & Rajan, 1994).
         self.depository_bank_id: Optional[str] = None
+        # Quan he TIN DUNG (vay, khac voi depository_bank_id la tien GUI) voi
+        # MOT ngan hang cu the khi he thong co nhieu ngan hang -- cung logic
+        # relationship banking nhu Firm.creditor_bank_id (Petersen & Rajan,
+        # 1994). Xem rule_engine.py Section 3B (tin dung tieu dung khong the
+        # chap, v0.23).
+        self.creditor_bank_id: Optional[str] = None
         # Metadata thuan tuy phuc vu truy vet pha he cho nghien cuu (KHONG
         # thuoc observation/action space, khong anh huong bat ky cong thuc
         # kinh te nao) -- agent_id cua cha/me neu sinh ra qua co che tai san
@@ -75,6 +81,7 @@ class Employee(BaseAgent):
         self.employed_by = None
         self.wage = 0.0
         self.debt = 0.0
+        self.creditor_bank_id = None
         self.unemployed_streak = 0
         # Chuyen ngay sang ACTIVE khi da duoc nap thong so
         self.status = LifeCycleStatus.ACTIVE
@@ -114,11 +121,21 @@ class Employee(BaseAgent):
         )
 
     def decide(self, observation: Observation) -> Action:
+        """
+        Khong gian hanh dong 4 chieu:
+        [0]: Cuong do lam viec (Work Effort): [0.0, 1.0]
+        [1]: Ty le khai bao thu nhap dong thue (Declare Ratio): [0.0, 1.0]
+        [2]: Ty le tieu dung tren phan thu nhap con lai (Consumption Ratio): [0.0, 1.0]
+        [3]: Cuong do vay tin dung tieu dung (Borrow Intensity): [0.0, 1.0] -- MOI (v0.23,
+             xem rule_engine.py Section 3B). CHI kich hoat khi tai san thanh khoan (cash +
+             tien gui) khong du chi tieu sinh ton thang nay -- khong phai mot "nut bam vay
+             tien tuy y" khong dieu kien.
+        """
         if "injected_action" in observation.metadata:
             raw_action = observation.metadata["injected_action"]
         else:
             effort = 0.8 if self.employed_by is not None else 0.4
-            raw_action = np.array([effort, 1.0, 0.6], dtype=np.float32)
+            raw_action = np.array([effort, 1.0, 0.6, 0.0], dtype=np.float32)
 
         return Action(
             agent_id=self.agent_id,
@@ -128,10 +145,10 @@ class Employee(BaseAgent):
 
     def validate_action(self, action: Action) -> ValidationResult:
         vals = action.values
-        if len(vals) < 3:
+        if len(vals) < 4:
             return ValidationResult(
                 is_valid=False,
-                sanitized_values=np.array([0.0, 1.0, 0.0], dtype=np.float32),
+                sanitized_values=np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32),
                 reason="Invalid action vector length"
             )
 
@@ -141,8 +158,9 @@ class Employee(BaseAgent):
 
         declare_ratio = float(np.clip(vals[1], 0.0, 1.0))
         consumption_ratio = float(np.clip(vals[2], 0.0, 1.0))
+        borrow_intensity = float(np.clip(vals[3], 0.0, 1.0))
 
-        sanitized = np.array([work_effort, declare_ratio, consumption_ratio], dtype=np.float32)
+        sanitized = np.array([work_effort, declare_ratio, consumption_ratio, borrow_intensity], dtype=np.float32)
         return ValidationResult(is_valid=True, sanitized_values=sanitized)
 
     def apply_result(self, transition_result: TransitionResult) -> None:
@@ -151,6 +169,8 @@ class Employee(BaseAgent):
         self.bank_deposit = float(max(0.0, self.bank_deposit + delta.get("deposit_delta", 0.0)))
         if "depository_bank_id" in delta:
             self.depository_bank_id = delta["depository_bank_id"]
+        if "creditor_bank_id" in delta:
+            self.creditor_bank_id = delta["creditor_bank_id"]
         self.energy = float(np.clip(self.energy + delta.get("energy_delta", 0.0), 0.0, 2.0))
         self.debt = float(max(0.0, self.debt + delta.get("debt_delta", 0.0)))
         
@@ -175,9 +195,24 @@ class Employee(BaseAgent):
         self.last_declare_ratio = float(delta.get("executed_declare_ratio", 1.0))
         self.last_consumption = float(delta.get("executed_consumption", 0.0))
 
-        # Kiem tra sinh tu noi tai
-        if self.cash < -300.0 or self.energy <= 0.0 or self.age >= self.max_age:
-            self.terminate(reason="Depleted resources or reached maximum age")
+        # LOI DA SUA (v0.20, xem KNOWN_PATHOLOGIES.md muc moi + CLAUDE_HISTORY.md):
+        # truoc day o day co MOT dieu kien tu vong RIENG cua chinh Employee
+        # ("if self.cash < -300.0 or self.energy <= 0.0 or self.age >= self.max_age:
+        # self.terminate(...)"), doc lap va KHAC CONG THUC voi dieu kien tu vong
+        # THAT co trich dan (Shapiro & Stiglitz, 1984) o rule_engine.py Section 9
+        # ("cash < -10*actual_living_cost VA energy < 0.15", co giai theo gia --
+        # ngan cach voi -300.0 co dinh o day). Khi hai dieu kien lech nhau (de
+        # xay ra nhat luc lam phat cao, vi nguong rule_engine gian theo living_cost
+        # con -300.0 o day dung yen), Employee tu status=TERMINATED nhung
+        # rule_engine KHONG he biet -- Government.new_deaths bo sot cai chet nay
+        # (khong bi phat dung), va death_remaining_horizon_ratio mac dinh 0.0 khien
+        # Employee chi nhan dung -100 phang thay vi phat theo tuoi nhu thiet ke.
+        # Sua: XOA HAN kiem tra rieng nay, chi con MOT nguon su that duy nhat cho
+        # tu vong (rule_engine.py Section 9, dong bo qua khoa "status" o tren) --
+        # dung theo dung hop dong kien truc ma chinh BaseAgent da tuyen bo
+        # ("Khong chua dinh danh tinh, khong chua luat kinh te, chi quan ly vong
+        # doi", be/agents/base_agent.py dong 10): Employee KHONG duoc tu quyet
+        # dinh luat kinh te (bao gom ca dieu kien tu vong) cho rieng minh.
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         if self.status in [LifeCycleStatus.TERMINATED, LifeCycleStatus.DECEASED]:
@@ -234,6 +269,7 @@ class Employee(BaseAgent):
             "employed_by": self.employed_by,
             "wage": round(self.wage, 1),
             "debt": self.debt,
+            "creditor_bank_id": self.creditor_bank_id,
             "age": self.age,
             "unemployed_streak": self.unemployed_streak,
             "parent_id": self.parent_id
@@ -244,6 +280,7 @@ class Employee(BaseAgent):
         self.cash = 0.0
         self.bank_deposit = 0.0
         self.depository_bank_id = None
+        self.creditor_bank_id = None
         self.parent_id = None
         self.energy = 1.0
         self.employed_by = None

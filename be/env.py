@@ -64,7 +64,16 @@ class MacroEnvironment:
                  reward_scale_government: float = 0.04, reward_scale_bank: float = 0.04,
                  reward_scale_supervisor: float = 0.012, reward_scale_economy: float = 0.02,
                  reward_clip: float = 100.0,
-                 subsistence_indexation_ceiling_mult: float = 3.0):
+                 subsistence_indexation_ceiling_mult: float = 3.0,
+                 initial_living_cost: float = 6.0,
+                 initial_employment_rate: float = 0.90,
+                 mrpl_scale_constant: float = 0.38,
+                 hard_max_firms: int = 7,
+                 firm_entry_probability: float = 0.15,
+                 firm_entry_unemployment_threshold: float = 0.08,
+                 firm_entry_profitability_margin: float = 0.0,
+                 mortality_rate_floor: int = 30,
+                 initial_economy_buffer_fund: float = 10000.0):
         self.num_employees: int = num_employees
         self.num_firms: int = num_firms
         self.num_banks: int = max(1, num_banks)
@@ -86,6 +95,24 @@ class MacroEnvironment:
         self.trait_mutation_sigma: float = float(trait_mutation_sigma)
         self.hard_min_emp: int = int(hard_min_emp)
         self.hard_max_emp: int = int(hard_max_emp)
+        self.hard_max_firms: int = int(hard_max_firms)
+        # He so cong gia nhap nganh (Section B duoi day) -- TRUOC DAY hardcode cuc bo, chuyen
+        # sang ScenarioConfig (v0.26, phuc vu ablation tach bach anh huong so luong firm ban dau
+        # / tran firm KHOI anh huong cua chinh dieu kien gia nhap, theo de xuat cua nguoi dung +
+        # Claude Web: tang so firm khong tu dong lam pha phuc hoi nhanh hon neu cong gia nhap van
+        # dong trong suy thoai). Jorgenson (1963)/Bain (1956)/Mortensen & Pissarides (1994) chi
+        # xac lap DIEU KIEN dinh tinh gia nhap (loi nhuan vuot chi phi von, co du thua lao dong),
+        # KHONG xac lap xac suat/nguong cu the -- ca hai la HE SO CAU TRUC TU DO HIEU CHINH.
+        self.firm_entry_probability: float = float(firm_entry_probability)
+        self.firm_entry_unemployment_threshold: float = float(firm_entry_unemployment_threshold)
+        self.firm_entry_profitability_margin: float = float(firm_entry_profitability_margin)
+        # Economy "an sinh vi mo" (v0.24, xem METHODOLOGY_NOTES.md muc 1/3) -- field RIENG cho
+        # san mau so ty le tu vong cua Economy, KHONG dung chung hard_min_emp (rui ro coupling an
+        # giua 2 co che khong thiet ke de phoi hop, xem METHODOLOGY_NOTES.md muc 3).
+        self.mortality_rate_floor: int = int(mortality_rate_floor)
+        # Von mo cap MOT LAN tu Treasury cho quy binh on du tru dem (buffer-stock) cua Economy
+        # luc reset -- xem rule_engine.py Section 4D + METHODOLOGY_NOTES.md muc 2.
+        self.initial_economy_buffer_fund: float = float(initial_economy_buffer_fund)
         self.initial_lending_rate: float = float(initial_lending_rate)
         self.initial_deposit_rate: float = float(initial_deposit_rate)
         self.gini_penalty_coef: float = float(gini_penalty_coef)
@@ -142,10 +169,44 @@ class MacroEnvironment:
         # tinh theo boi so cua initial_living_cost -- xem chu thich tai noi su dung.
         self.subsistence_indexation_ceiling_mult: float = float(subsistence_indexation_ceiling_mult)
 
+        # GIA SINH HOAT KHOI TAO (v0.17, xem CLAUDE_HISTORY.md): truoc day hardcode = 20.0,
+        # lech 3-4 lan so voi muc gia he thong thuc su hoi tu (~4-8, do thuc nghiem bang mo
+        # phong policy da hoc -- xem CLAUDE_HISTORY.md v0.16.1) -- day la mot hang so KHOI TAO
+        # SAI, khong phai lua chon can nhac: vi Calvo (1983) gan trong so theta=0.70 cho
+        # expected_price (= gia ky truoc), mot gia khoi tao qua cao tao cu soc gia keo dai
+        # nhieu thang dau moi episode. Gia tri 6.0 duoc DO thuc nghiem (chay policy ngau
+        # nhien voi pre-employment o duoi, quan sat gia hoi tu ~5-7 trong 10 buoc dau) --
+        # khong phai suy doan ly thuyet.
+        self.initial_living_cost: float = float(initial_living_cost)
+
+        # TY LE CO VIEC LAM LUC KHOI TAO (v0.17): truoc day 100% dan so bat dau THAT NGHIEP
+        # (khong ai co employed_by), trong khi tran tuyen dung MAX_HIRES_PER_MONTH =
+        # max(2, ceil(0.25*headcount)) chi cho phep toi da 2 nguoi/thang/firm khi headcount=0
+        # -- tao ra mot "cua so khung hoang" co hoc keo dai 4-5 thang moi episode ma KHONG
+        # policy nao tranh duoc bang cach hoc (gioi han co hoc cua he thong, khong phai hanh
+        # vi). Do thuc nghiem (CLAUDE_HISTORY.md v0.16.1): duoi policy da hoc, ~30% dan so ban
+        # dau chet trong ~30 thang dau vi Firm khai thac dung "cua so" nay (loi nhuan cao bat
+        # thuong khi thue it luc dau). Sua: gan san viec lam cho 90% dan so luc reset() (xem
+        # _create_world/reset), de lai 10% that nghiep lam ma sat tu nhien -- hop voi khoang
+        # ty le that nghiep tu nhien/co ma sat thuong duoc dan chieu trong ly thuyet tim kiem
+        # (Mortensen, D. T., & Pissarides, C. A. (1994), "Job Creation and Job Destruction",
+        # RES 61(3) -- da trich dan cho chinh co che ma sat tim viec o rule_engine.py Section
+        # 2). LUU Y: day la DIEU KIEN KHOI TAO, khong phai cong thuc hanh vi -- ty le 90%
+        # cu the la HE SO HIEU CHINH tu do dieu chinh, KHONG suy truc tiep tu Mortensen &
+        # Pissarides (paper do khong dua ra mot con so % cu the).
+        self.initial_employment_rate: float = float(initial_employment_rate)
+
+        # He so hieu chinh quy mo MRPL/san luong (v0.19) -- xem chu thich day du tai
+        # RuleEngine.__init__ (be/rule_engine.py). Mac dinh = GIA TRI DA SUA (giai dai so tu
+        # dieu kien can bang wage/price); dat = 1.0 de tai hien logic CU (lech chuan dinh co,
+        # xem KNOWN_PATHOLOGIES.md muc #8).
+        self.mrpl_scale_constant: float = float(mrpl_scale_constant)
+
         self.event_bus: EventBus = EventBus()
         self.rule_engine: RuleEngine = RuleEngine(
             event_bus=self.event_bus,
             subsistence_indexation_ceiling_mult=self.subsistence_indexation_ceiling_mult,
+            mrpl_scale_constant=self.mrpl_scale_constant,
         )
         self.agents: Dict[str, BaseAgent] = {}
         self.banks: List[Bank] = []
@@ -158,7 +219,7 @@ class MacroEnvironment:
     def _create_world(self) -> None:
         self.agents.clear()
         self.gov = Government(agent_id="gov_1", gini_penalty_coef=self.gini_penalty_coef, death_penalty_coef=self.death_penalty_coef)
-        self.eco = Economy(agent_id="eco_1")
+        self.eco = Economy(agent_id="eco_1", mortality_rate_floor=self.mortality_rate_floor)
         self.sup = Supervisor(agent_id="sup_1")
 
         # Hỗ trợ N ngân hàng đồng thời (mặc định 1). Toàn bộ ngân hàng chia sẻ
@@ -226,7 +287,13 @@ class MacroEnvironment:
         per_bank_reserves = 500000.0 / len(self.banks)
         for b in self.banks:
             b.initialize(initial_reserves=per_bank_reserves, initial_lending_rate=self.initial_lending_rate, initial_deposit_rate=self.initial_deposit_rate)
-        self.eco.initialize(initial_living_cost=20.0, initial_housing_inventory=100, initial_house_price=1000.0)
+        self.eco.initialize(initial_living_cost=self.initial_living_cost, initial_housing_inventory=100, initial_house_price=1000.0)
+        # Von mo QUY BINH ON DU TRU DEM cua Economy (v0.24) -- chuyen MOT LAN tu Treasury, y het
+        # mau hinh cap von cho Firm/Employee luc reset (seed_cash/start_cash) -- SFC-consistent
+        # (chi chuyen giao noi bo, khong tao tien moi). Xem rule_engine.py Section 4D +
+        # METHODOLOGY_NOTES.md muc 2.
+        self.gov.treasury -= self.initial_economy_buffer_fund
+        self.eco.strategic_reserve_fund = self.initial_economy_buffer_fund
         self.sup.initialize(initial_budget=50000.0, initial_audit_rate=0.05, initial_fine_multiplier=1.5)
         
         self.sup.violations_detected = 0
@@ -260,10 +327,55 @@ class MacroEnvironment:
                 )
                 agent.status = LifeCycleStatus.ACTIVE
 
+        self._assign_initial_employment()
+
         raw_state = self.get_raw_environment_state()
         initial_obs = {aid: sanitize_observation(a.observe(raw_state).vector) for aid, a in self.agents.items()}
         infos = {aid: {"status": a.status.name} for aid, a in self.agents.items()}
         return initial_obs, infos
+
+    def _assign_initial_employment(self) -> None:
+        """Gán việc làm sẵn cho một phần dân số lúc reset() (v0.17, xem CLAUDE_HISTORY.md và
+        chú thích tại self.initial_employment_rate ở __init__). Phân bổ số lượng nhân viên
+        mỗi firm tỷ lệ thuận với capital_stock khởi tạo (vốn lớn hơn -> nhu cầu lao động bổ
+        sung lớn hơn, nhất quán với tính bổ sung vốn-lao động ngầm định trong Cobb-Douglas ở
+        rule_engine.py Section 3), dùng phương pháp số dư lớn nhất/Hamilton (Balinski, M. L.,
+        & Young, H. P. (1982), "Fair Representation: Meeting the Ideal of One Man, One Vote",
+        Yale University Press) để tổng số người được gán đúng bằng mục tiêu mà không thiên vị
+        firm nào do làm tròn. Nhân viên được XÁO TRỘN NGẪU NHIÊN trước khi gán (không theo kỹ
+        năng) để tránh vô tình tạo một phân bổ "tối ưu" nhân tạo ngay từ đầu."""
+        active_firms = [a for a in self.agents.values() if isinstance(a, Firm)]
+        active_employees = [a for a in self.agents.values() if isinstance(a, Employee)]
+        if not active_firms or not active_employees:
+            return
+
+        n_target = int(round(len(active_employees) * self.initial_employment_rate))
+        n_target = max(0, min(n_target, len(active_employees)))
+
+        total_capital = sum(f.capital_stock for f in active_firms)
+        if total_capital <= 0.0:
+            shares = [n_target / len(active_firms)] * len(active_firms)
+        else:
+            shares = [f.capital_stock / total_capital * n_target for f in active_firms]
+        quotas = [int(s) for s in shares]
+        remainder = n_target - sum(quotas)
+        # Hamilton/largest-remainder: phan du (do lam tron) di cho cac firm co phan thap phan
+        # lon nhat truoc, dam bao tong dung bang n_target.
+        order = sorted(range(len(active_firms)), key=lambda i: shares[i] - quotas[i], reverse=True)
+        for i in order[:remainder]:
+            quotas[i] += 1
+
+        shuffled = list(active_employees)
+        np.random.shuffle(shuffled)
+        idx = 0
+        for firm, quota in zip(active_firms, quotas):
+            for _ in range(quota):
+                if idx >= len(shuffled):
+                    break
+                emp = shuffled[idx]
+                idx += 1
+                emp.employed_by = firm.agent_id
+                firm.employee_ids.append(emp.agent_id)
 
     def observe_agent(self, agent_id: str, raw_state: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """Quan sat DA LAM SACH cua mot tac tu -- DUNG DUNG cach step()/reset() dung de
@@ -332,6 +444,23 @@ class MacroEnvironment:
         # QUẢN TRỊ TỬ VONG & BẢO TOÀN DI SẢN KHO BẠC (SFC CONSISTENCY)
         dead_emps = [aid for aid in self.agents.items() if isinstance(aid[1], Employee) and aid[1].status in [LifeCycleStatus.DECEASED, LifeCycleStatus.DEAD, LifeCycleStatus.TERMINATED]]
         bankrupt_firms = [aid for aid in self.agents.items() if isinstance(aid[1], Firm) and aid[1].status == LifeCycleStatus.BANKRUPT]
+        # LOI DA SUA (v0.20, xem KNOWN_PATHOLOGIES.md muc moi): truoc day KHONG CO
+        # nhanh tuong duong cho Bank o day -- Bank.apply_result co the tu goi
+        # self.terminate() (status=TERMINATED) khi reserves < -100000 (mat kha
+        # nang thanh toan tram trong), nhung khong bao gio duoc don khoi
+        # self.agents (cung lop loi API MultiAgentEnv da sua cho Employee/Firm o
+        # v0.11, xem chu thich ngay ben duoi) -- Bank "chet" tro thanh zombie vinh
+        # vien: van nhan obs/reward/action moi buoc, khong bao gio terminated=True
+        # cho RLlib. Nghiem trong hon: rule_engine.py::_get_all_agents(Bank) CHI
+        # loc trang thai ACTIVE/INITIALIZED va RAISE RuntimeError neu KHONG con
+        # bank ACTIVE nao -- voi cau hinh mac dinh num_banks=1, bank duy nhat pha
+        # san se lam CRASH toan bo execute_cycle() (va do do ca vong training/
+        # simulation) ngay buoc ke tiep. Da DO THUC NGHIEM (khong doan): qua hon
+        # 4000 buoc heuristic/random-noise VA mot checkpoint PPO da train that
+        # (iter_40, 3 seed x 480 buoc), reserves chua bao gio tien gan nguong nay
+        # -- nhung day van la mot "qua bom no cham" kien truc can va truoc, dung
+        # tinh than "phai tai hien duoc" cua du an (xem KNOWN_PATHOLOGIES.md).
+        dead_banks = [aid for aid in self.agents.items() if isinstance(aid[1], Bank) and aid[1].status == LifeCycleStatus.TERMINATED]
 
         # LỖI API MultiAgentEnv (Gymnasium-style) ĐÃ SỬA -- xem CLAUDE.md để
         # biết bối cảnh phát hiện đầy đủ. Trước đây agent vừa chết/phá sản bị
@@ -386,6 +515,71 @@ class MacroEnvironment:
                 if isinstance(a, Employee) and a.employed_by == b_id:
                     a.employed_by = None
                     a.wage = 0.0
+
+        # NGƯỜI CHO VAY CUỐI CÙNG (Lender of Last Resort) -- Bagehot, W. (1873),
+        # "Lombard Street: A Description of the Money Market", Henry S. King & Co.
+        # -- học thuyết kinh điển: "lend freely, at a HIGH RATE, against good
+        # collateral". BẢN VÁ ĐẦU TIÊN (v0.20) chỉ tái cấp vốn MIỄN PHÍ, thiếu hẳn
+        # vế "at a high rate" -- bị chỉ ra (Claude Web, 2026-09-23) là dùng tên
+        # Bagehot cho một cơ chế KHÔNG đúng doctrine (loại bỏ hoàn toàn moral
+        # hazard: với num_banks=1 mặc định, "toàn bộ bank chết" và "bank duy nhất
+        # chết" là CÙNG một điều kiện -- Bank không bao giờ thực sự chịu hậu quả).
+        # SỬA: khoản cứu trợ được ghi nhận là MỘT KHOẢN NỢ thật (`bailout_debt`,
+        # xem Bank.__init__) mà Bank phải trả Kho bạc kèm lãi suất PHẠT cao hơn
+        # hẳn trần lending_rate thị trường (`bailout_penalty_rate`, xem
+        # rule_engine.py Section 5B) -- Bank vẫn được cứu (tránh crash/rỗng hệ
+        # thống tín dụng), nhưng KHÔNG miễn phí, giữ được động cơ quản trị rủi ro
+        # thay vì trung hoà hoàn toàn moral hazard.
+        # Áp dụng CHỈ khi để TẤT CẢ bank chết cùng lúc sẽ làm rỗng hoàn toàn hệ
+        # thống tín dụng (rule_engine.py::_get_all_agents(Bank) sẽ raise
+        # RuntimeError, crash toàn bộ episode) -- không áp dụng bailout cho các
+        # bank khác nếu còn ít nhất 1 bank khác vẫn ACTIVE (để nguyên tắc "chịu
+        # trách nhiệm hậu quả tài chính" của RL vẫn có hiệu lực bình thường với
+        # num_banks>=2). Ngân hàng được cứu là ngân hàng có reserves CAO NHẤT
+        # trong số vừa phá sản (ít mất khả năng thanh toán nhất), tái cấp vốn về
+        # đúng 0 (từ Kho bạc, một khoản chi ngân sách tường minh, bảo toàn SFC --
+        # khoản này được ghi vào bailout_debt để đòi lại dần, không phải mất trắng).
+        still_active_banks = any(
+            isinstance(a, Bank) and a.status in (LifeCycleStatus.ACTIVE, LifeCycleStatus.INITIALIZED)
+            for a in self.agents.values()
+        )
+        bailed_out_bank_id: Optional[str] = None
+        if dead_banks and not still_active_banks:
+            bailed_out_bank_id, bailed_bank = max(dead_banks, key=lambda item: item[1].reserves)
+            bailout_cost = max(0.0, -bailed_bank.reserves)
+            self.gov.treasury -= bailout_cost
+            bailed_bank.reserves = 0.0
+            # KHÔNG cho không (xem chú thích Bagehot ở trên): khoản cứu trợ là
+            # một khoản NỢ thật, Bank phải trả dần kèm lãi phạt
+            # (bailout_penalty_rate) qua rule_engine.py Section 5B từ bước sau.
+            bailed_bank.bailout_debt += bailout_cost
+            bailed_bank.status = LifeCycleStatus.ACTIVE
+            self.event_bus.publish(Event(
+                event_type=EventType.AGENT_BANKRUPT,
+                source_id=self.gov.agent_id,
+                target_id=bailed_out_bank_id,
+                payload={"reason": "Lender of last resort bailout", "cost": round(bailout_cost, 1)},
+                timestep=self.timestep
+            ))
+
+        for bk_id, bk in dead_banks:
+            if bk_id == bailed_out_bank_id:
+                continue
+            self.reported_dead_agents.add(bk_id)
+            terminal_agents_this_step[bk_id] = bk
+            self.agents.pop(bk_id, None)
+            # Cùng nguyên tắc bảo toàn dòng tiền ở 2 nhánh trên: reserves còn lại
+            # (kể cả âm) được Kho bạc hấp thụ tường minh, KHÔNG "bốc hơi" âm thầm.
+            self.gov.treasury += bk.reserves
+            bk.reserves = 0.0  # tránh đếm trùng trong sum(b.reserves for b in self.banks) ở macro/M2
+            # Dọn tham chiếu treo (stale) tới bank đã chết để rule_engine.py Section
+            # 5/8B tự chọn lại ngân hàng còn sống ở bước kế tiếp (đã hỗ trợ sẵn qua
+            # "existing_creditor/depository not in bank_lookup" -- xem rule_engine.py).
+            for a in self.agents.values():
+                if isinstance(a, Firm) and getattr(a, "creditor_bank_id", None) == bk_id:
+                    a.creditor_bank_id = None
+                if isinstance(a, Employee) and getattr(a, "depository_bank_id", None) == bk_id:
+                    a.depository_bank_id = None
 
         # A. ĐIỀU TIẾT DÂN SỐ THEO SỨC TẢI KINH TẾ (Demographic Carrying Capacity)
         active_emps_list = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
@@ -451,6 +645,13 @@ class MacroEnvironment:
         if current_emp_count < HARD_MIN_EMP:
             num_newborns = 2 if current_emp_count < 20 else 1
         elif current_emp_count < HARD_MAX_EMP:
+            # HE SO CAU TRUC TU DO HIEU CHINH (v0.20, bo sung nhan con thieu -- phat hien
+            # qua audit toan du an): cac he so 0.08/0.15/0.10 va bien [0.02, 0.35] CHI xac
+            # dinh DO LON xac suat sinh san moi buoc de dan so tang truong hop ly trong
+            # pham vi 1 episode (khong bung no/khong triet tieu) -- Epstein & Axtell (1996)
+            # chi xac lap DIEU KIEN sinh san (tuoi + "sugar" toi thieu), KHONG cho cong
+            # thuc xac suat cu the nao; day la lua chon hieu chinh so hoc rieng cua mo
+            # phong nay, khong suy ra truc tiep tu trich dan.
             p_birth = 0.08 + 0.15 * max(0.0, 1.0 - unemployment_rate) + 0.10 * max(0.0, living_standard_ratio - 1.0)
             p_birth = float(np.clip(p_birth, 0.02, 0.35))
             eligible_parents = [
@@ -550,10 +751,21 @@ class MacroEnvironment:
                 timestep=self.timestep
             ))
 
+        # Economy doc births_this_step CUA BUOC NAY o buoc SAU (do tre 1 buoc co chu dich -- xem
+        # Economy.__init__::last_births_this_step) -- rule_engine.execute_cycle() da chay VA
+        # calculate_reward() cua MOI agent (bao gom Economy) da tinh xong TRUOC khi nhanh sinh
+        # san nay chay, nen khong the phan anh dung buoc nay ma khong doi lai thu tu step().
+        self.eco.last_births_this_step = self.births_this_step
+
         # B. GIA NHẬP THỊ TRƯỜNG THEO JORGENSON (1963) & QUY MÔ MES (Bain, 1956)
         active_firms_list = [a for a in self.agents.values() if isinstance(a, Firm) and a.status == LifeCycleStatus.ACTIVE]
         current_firm_count = len(active_firms_list)
-        HARD_MAX_FIRMS = 7
+        # HE SO CAU TRUC TU DO HIEU CHINH, doc tu self.* (v0.20, chuyen tu hardcode cuc
+        # bo sang ScenarioConfig de nhat quan voi HARD_MIN_EMP/HARD_MAX_EMP o tren --
+        # phat hien qua audit toan du an, xem KNOWN_PATHOLOGIES.md). Jorgenson (1963)/
+        # Bain (1956) chi xac lap DIEU KIEN gia nhap nganh, KHONG cho gioi han so luong
+        # firm toi da.
+        HARD_MAX_FIRMS = self.hard_max_firms
 
         total_market_capital = sum(f.capital_stock for f in active_firms_list)
         total_market_profit = sum(getattr(f, "last_profit", 0.0) for f in active_firms_list)
@@ -562,13 +774,30 @@ class MacroEnvironment:
         # Điều kiện gia nhập: Lợi nhuận vốn vượt chi phí cơ hội vốn (lãi suất tiền gửi bình
         # quân toàn hệ thống ngân hàng) + có thặng dư lao động
         avg_deposit_rate = float(np.mean([b.deposit_rate for b in self.banks]))
-        is_profitable_industry = (market_return_on_capital > avg_deposit_rate)
-        has_excess_labor = (unemployment_rate > 0.08 and unemployed_count >= 2)
+        # LUU Y THIET KE (phat hien qua thao luan voi nguoi dung + Claude Web, 2026-09-24):
+        # dieu kien is_profitable_industry NGUYEN BAN (margin=0.0, mac dinh) la MOT CONG
+        # PROCYCLICAL tu than -- dung luc suy thoai (loi nhuan firm sup vi quy luong bi khoa
+        # cao boi co che "cong lương" da ghi o KNOWN_PATHOLOGIES.md) can firm moi hap thu lao
+        # dong du thua nhat thi dieu kien nay lai kho thoa nhat, keo dai pha xau thay vi rut
+        # ngan. firm_entry_profitability_margin (HE SO CAU TRUC TU DO HIEU CHINH, mac dinh 0.0
+        # = hanh vi CU khong doi) cho phep noi long: gia tri duong ha nguong loi nhuan can thiet
+        # xuong duoi avg_deposit_rate, mo phong chinh sach khuyen khich gia nhap thi truong thoi
+        # ky suy thoai (countercyclical entry subsidy) -- dung de ablation TACH BACH voi so
+        # luong firm ban dau/tran firm (HARD_MAX_FIRMS): bien nay chi doi CHINH dieu kien gia
+        # nhap co thoa hay khong, khac voi firm_entry_probability (toc do gia nhap KHI dieu
+        # kien DA thoa) va num_firms/hard_max_firms (quy mo/tran so luong).
+        is_profitable_industry = (market_return_on_capital > (avg_deposit_rate - self.firm_entry_profitability_margin))
+        has_excess_labor = (unemployment_rate > self.firm_entry_unemployment_threshold and unemployed_count >= 2)
         emergency_repair = (current_firm_count < 2 and unemployed_count >= 2)
 
+        # Xac suat gia nhap MOI BUOC khi du dieu kien loi nhuan/lao dong da thoa (HE SO CAU
+        # TRUC TU DO HIEU CHINH, doc tu self.firm_entry_probability -- v0.20 bo sung hang so
+        # nay, v0.26 chuyen tu hardcode cuc bo sang ScenarioConfig) -- Jorgenson (1963)/Bain
+        # (1956) chi xac lap DIEU KIEN gia nhap, khong cho toc do/xac suat gia nhap cu the.
         should_incorporate = (
-            emergency_repair or 
-            (current_firm_count < HARD_MAX_FIRMS and is_profitable_industry and has_excess_labor and np.random.rand() < 0.15)
+            emergency_repair or
+            (current_firm_count < HARD_MAX_FIRMS and is_profitable_industry and has_excess_labor
+             and np.random.rand() < self.firm_entry_probability)
         )
 
         if should_incorporate:

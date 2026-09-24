@@ -143,9 +143,30 @@ class Firm(BaseAgent):
         if "creditor_bank_id" in delta:
             self.creditor_bank_id = delta["creditor_bank_id"]
 
-        # Kiem tra dieu kien pha san
-        if self.cash < 0.0 and self.debt > (self.capital_stock * 2.0 + 500.0):
-            self.terminate(reason="Insolvency and excessive leverage")
+        # LOI DA SUA (v0.20, xem KNOWN_PATHOLOGIES.md muc moi + CLAUDE_HISTORY.md):
+        # truoc day o day KHONG CO dong dong bo "status" tu delta (khac han
+        # Employee.apply_result da co san dong nay) -- nghia la
+        # deltas[firm.agent_id]["status"] = LifeCycleStatus.BANKRUPT ma
+        # rule_engine.py Section 8 gan sau khi tinh dung mo hinh Merton (1974)
+        # (thu hoi tai san, xoa no dung ngan hang chu no, sa thai nhan vien...)
+        # CHUA BAO GIO DUOC DOC -- la dead code hoan toan. Trang thai BANKRUPT
+        # cua chinh Firm truoc day CHI co the den tu dieu kien rieng, khong
+        # trich dan, o ngay duoi day ("cash < 0 VA debt > 2*capital+500"), voi
+        # mot bat loi nghiem trong: dieu kien nay doc self.debt SAU KHI da bi
+        # rule_engine xoa ve 0 qua debt_delta (dong ben tren) trong dung buoc
+        # rule_engine phat hien mat kha nang thanh toan -- nen hau nhu KHONG
+        # BAO GIO tu no trung dung luc rule_engine da flag, khien Firm tro
+        # thanh "zombie": no bi xoa, nhan vien bi sa thai dung, ngan hang duoc
+        # hach toan NPL dung, nhung CHINH firm van "ACTIVE" mai mai, khong bao
+        # gio duoc don khoi self.agents/khong bao gio nhan terminated=True cho
+        # RLlib (cung lop loi da sua cho Employee/Firm o v0.11, xem
+        # KNOWN_PATHOLOGIES.md muc 4). Sua: them dong dong bo "status" chuan
+        # (giong Employee), xoa han dieu kien tu-pha-san rieng -- MOT nguon su
+        # that duy nhat la rule_engine.py Section 8 (Merton, 1974), dung theo
+        # dung hop dong kien truc BaseAgent da tuyen bo (be/agents/base_agent.py
+        # dong 10: "khong chua luat kinh te").
+        if "status" in delta:
+            self.status = delta["status"]
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         if self.status == LifeCycleStatus.BANKRUPT or self.status == LifeCycleStatus.TERMINATED:

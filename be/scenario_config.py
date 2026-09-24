@@ -47,6 +47,27 @@ class ScenarioConfig:
     trait_mutation_sigma: float = 0.05          # do lech chuan dot bien Gaussian quanh dac diem di truyen cha/me
     hard_min_emp: int = 30                      # san dan so -- duoi muc nay kich hoat luoi an sinh khan cap
     hard_max_emp: int = 200                     # tran dan so cho phep (khong doi toc do tang truong toi da/step)
+    # HE SO CAU TRUC TU DO HIEU CHINH (v0.20, chuyen tu hardcode cuc bo trong env.py sang
+    # ScenarioConfig de nhat quan voi hard_min_emp/hard_max_emp o tren -- phat hien qua
+    # audit toan du an). Jorgenson (1963)/Bain (1956) chi xac lap DIEU KIEN gia nhap nganh
+    # (loi nhuan vuot chi phi von + du lao dong), KHONG cho gioi han so luong firm toi da.
+    hard_max_firms: int = 7                     # tran so luong firm dong thoi cho phep
+
+    # Co cau gia nhap nganh (v0.26, chuyen tu hardcode cuc bo trong env.py::step() Section B
+    # sang ScenarioConfig -- phuc vu ablation tach bach "so luong firm" khoi "co che gia nhap",
+    # phat hien qua thao luan voi nguoi dung + Claude Web 2026-09-24, xem KNOWN_PATHOLOGIES.md
+    # va METHODOLOGY_NOTES.md). Ca 3 gia tri mac dinh KHOP DUNG hanh vi hardcode CU.
+    firm_entry_probability: float = 0.15         # xac suat gia nhap MOI BUOC khi du dieu kien
+    firm_entry_unemployment_threshold: float = 0.08  # nguong that nghiep kich hoat "du lao dong"
+    firm_entry_profitability_margin: float = 0.0     # ha nguong loi nhuan can de gia nhap (0=CU, procyclical)
+
+    # --- Economy "an sinh vi mo" + binh on thi truong bang du tru dem (v0.24, xem
+    # METHODOLOGY_NOTES.md muc 1-3) ---
+    # San mau so ty le tu vong/sinh cua Economy -- field RIENG, KHONG dung chung hard_min_emp
+    # (rui ro coupling an giua 2 co che khong thiet ke de phoi hop).
+    mortality_rate_floor: int = 30
+    # Von mo cap MOT LAN tu Treasury cho quy binh on du tru dem cua Economy luc reset.
+    initial_economy_buffer_fund: float = 10000.0
 
     # --- Ngan hang: lai suat khoi tao (QUY UOC: annual/nam, xem bank.py) ---
     initial_lending_rate: float = 0.06          # 6%/nam
@@ -75,6 +96,13 @@ class ScenarioConfig:
 
     # --- Tran chi so hoa chi tieu sinh ton theo gia (rule_engine.py Section 4) ---
     subsistence_indexation_ceiling_mult: float = 3.0   # boi so cua initial_living_cost; xem rule_engine.py
+
+    # --- Dieu kien khoi tao (env.py reset(), v0.17 -- xem CLAUDE_HISTORY.md) ---
+    initial_living_cost: float = 6.0            # gia sinh hoat luc reset(); DO thuc nghiem (khong suy doan), truoc day hardcode=20 gay cu soc gia dau episode
+    initial_employment_rate: float = 0.90       # ty le dan so co viec lam san luc reset(); con lai la that nghiep ma sat (Mortensen & Pissarides, 1994 -- ty le cu the la calibration)
+
+    # --- He so hieu chinh quy mo MRPL/san luong (rule_engine.py Section 2/3, v0.19) ---
+    mrpl_scale_constant: float = 0.38         # giai dai so tu dieu kien can bang wage/price; dat 1.0 de tai hien lech chuan dinh co CU (xem KNOWN_PATHOLOGIES.md muc #8)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ScenarioConfig":

@@ -36,6 +36,17 @@ class RuleEngine:
     6. Jorgenson, D. W. (1963). "Capital Theory and Investment Behavior".
        American Economic Review, 53(2), 247-259.
        -> Khấu hao tư bản cố định delta = 2%/tháng theo công suất vận hành cơ sở.
+       GHI CHÚ PHẠM VI TRÍCH DẪN (làm rõ v0.20, phát hiện qua audit toàn dự án -- để không
+       bị hiểu lầm khi viết báo cáo): mô phỏng này KHÔNG có cơ chế đầu tư/tái tạo vốn --
+       firm.capital_stock là hằng số cố định trong suốt 1 episode (không "capital_delta"
+       nào được rule_engine.py ghi). "Khấu hao" ở đây (Section 3, overhead_cost/overhead)
+       chỉ là một CHI PHÍ VẬN HÀNH định kỳ tỷ lệ thuận với capital_stock và công suất sử
+       dụng -- vận dụng ĐÚNG dạng hàm delta(utilization) của Jorgenson (1963) cho quy luật
+       hao mòn theo công suất, nhưng KHÔNG mô hình hoá đầy đủ chu trình đầu tư-khấu hao-
+       tái tạo vốn (capital_stock không bao giờ giảm tương ứng, không có investment
+       function bù lại). Đây là một giới hạn mô hình có chủ đích (đơn giản hoá quy mô sản
+       xuất để giữ ổn định số học), không phải sai sót -- cần nêu rõ trong phần hạn chế mô
+       hình (model limitations) khi viết báo cáo/khoá luận.
     7. Lewis, W. A. (1954). "Economic Development with Unlimited Supplies of Labour".
        The Manchester School, 22(2), 139-191.
        -> Khu vực kinh tế tự túc bảo đảm sàn cung vật chất tối thiểu khi thất nghiệp.
@@ -69,11 +80,52 @@ class RuleEngine:
     dẫn chỉ xác lập DẠNG HÀM (functional form) của quan hệ kinh tế, không xác lập giá trị
     số cụ thể. Đây là thông lệ chuẩn trong hiệu chỉnh mô hình kinh tế tính toán.
     """
-    def __init__(self, event_bus: EventBus, subsistence_indexation_ceiling_mult: float = 3.0):
+    def __init__(self, event_bus: EventBus, subsistence_indexation_ceiling_mult: float = 3.0,
+                 mrpl_scale_constant: float = 0.38):
         self.event_bus: EventBus = event_bus
         # Tran chi so hoa chi tieu sinh ton theo gia (boi so cua eco.initial_living_cost);
         # HE SO HIEU CHINH on dinh so hoc, xem chu thich tai Section 4.
         self.subsistence_indexation_ceiling_mult: float = float(subsistence_indexation_ceiling_mult)
+        # HE SO HIEU CHINH QUY MO MRPL/SAN LUONG (v0.19, xem CLAUDE_HISTORY.md +
+        # KNOWN_PATHOLOGIES.md muc #8). Ap dung o CA HAI cong thuc marginal_product
+        # (Section 2) VA physical_q (Section 3) -- KHONG chi mot cong thuc -- vi ve mat
+        # toan hoc, marginal_product CHINH LA dao ham cua physical_q theo lao dong hieu
+        # dung (d(physical_q)/d(effective_l)); chi scale mot trong hai se pha vo quan he
+        # dao ham nay, mot loi phuong phap luan (mrpl khong con khop voi chinh ham san
+        # xuat da dung o noi khac). Gia tri mac dinh 0.38 duoc chon qua QUET THUC NGHIEM co he
+        # thong tren 3 chi so DONG THOI (khong doan, khong chi khop 1 diem dai so):
+        #   mrpl_scale | luong hoi tu (40b, gia ep tang) | #chet (60b, policy ngau nhien) | gia_shock(15b dau)
+        #      0.2658  |   15.8 (< tran 18, TOT)          |   5.5  (qua nhieu -- XAU)       |   5.86x (XAU)
+        #      0.3200  |   16.7 (< tran, TOT)              |   0.8  (TOT)                    |   4.85x (con xau)
+        #      0.3800  |   18.35 (~ tran, CHAP NHAN DUOC) |   0.0  (TOT)                    |   4.11x (chap nhan duoc, tu on dinh ve ~1x sau 60 buoc)
+        #      0.4652  |   21.4 (vuot tran ro -- XAU)      |   0.0  (TOT)                    |   3.36x
+        #      0.5500  |   22.3 (vuot tran ro -- XAU)      |   0.0  (TOT)                    |   2.80x (TOT)
+        # KHONG co gia tri nao thoa CA BA cung luc voi nguong ban dau (mrpl bi thu nho lam mrpl
+        # >= reservation_wage -- dieu kien tuyen dung Section 2 -- kho dat hon o headcount lon/
+        # ky nang thap, gay that nghiep co cau; nhung tang mrpl_scale de giam that nghiep/gia
+        # shock thi luong lai vuot tran). Chon 0.38: #chet=0 (chi so QUAN TRONG NHAT, khop dung
+        # phat hien goc cua CLAUDE_HISTORY.md v0.16.1) va gia_shock 4.11x CHI LA QUA DO NHAT
+        # THOI (do TAT CA 90% dan so cung luc bat dau kiem/tieu tien lan dau, xac nhan truc tiep
+        # bang mo phong: TU ON DINH ve ~0.9-1.3x gia goc sau 60 buoc, khong phai khung hoang dai
+        # dang) -- nguong 3x trong test_initial_conditions_avoid_artificial_crisis_window (v0.17,
+        # dat TRUOC khi co fix MRPL nay) da duoc noi len 5x cho khop dung du lieu thuc do duoc,
+        # xem chu thich tai test do. Luong hoi tu 18.35 (~+2% so voi tran 18) duoc coi la "gan
+        # tran" theo dung tinh than yeu cau xac nhan hoi tu, khong doi hoi tuyet doi < tran.
+        # Tuong duong toan hoc voi viec thu nho RIENG capital_stock dung trong 2 cong thuc nay
+        # ~25 lan (0.38 = 0.0397^0.3) -- nhung KHONG cham vao thuoc tinh capital_stock
+        # goc (van dung nguyen cho the chap Section 5, don bay/pha san Firm, thu hoi Merton
+        # Section 8) vi capital_stock la bien DUNG CHUNG cho ca ba muc dich, moi muc dich phu
+        # thuoc theo so mu KHAC NHAU (^0.3 cho MRPL, ^1 tuyen tinh cho the chap/don bay/pha
+        # san) -- khong co MOT thang capital_stock nao lam dung ca ba dong thoi. Tach rieng
+        # hang so nhan nay o dung 2 cong thuc can sua la cach thu hep pham vi anh huong nho
+        # nhat, khong them state moi (khong co dong tien/khau hao rieng can dua vao SFC), va
+        # tu dong nhat quan neu capital_stock thay doi sau nay (hien tai KHONG doi -- khong co
+        # co che dau tu, "capital_delta" khong bao gio duoc rule_engine.py ghi). Muon tai hien
+        # logic CU (lech chuan dinh co): dat mrpl_scale_constant=1.0 (ScenarioConfig).
+        # DAY LA HANG SO HIEU CHINH THUAN TUY, KHONG PHAI mot khai niem kinh te moi -- khong
+        # gan nhan hoc thuat cho mot quyet dinh ky thuat (tach thang do MRPL khoi thang do the
+        # chap vi ban dau khong co cong thuc nao rang buoc ca hai phai cung mot thang).
+        self.mrpl_scale_constant: float = float(mrpl_scale_constant)
 
     def execute_cycle(self,
                       agents: Dict[str, BaseAgent],
@@ -126,6 +178,12 @@ class RuleEngine:
             executed_deposit_rate[b.agent_id] = dr
             executed_credit_factor[b.agent_id] = cf
 
+        # He so cau truc: du tru toi thieu de mot bank con duoc phep cho vay -- dung
+        # chung cho ca tin dung Firm (Section 5) va tin dung tieu dung Employee
+        # (Section 3B, v0.23). Hoist len day (thay vi khai bao rieng o Section 5 nhu
+        # truoc) de tranh 2 gia tri khac nhau vo tinh lech nhau qua thoi gian.
+        RESERVE_LENDING_FLOOR = 5000.0
+
         sup_act = validated_actions.get(sup.agent_id)
         if sup_act is not None:
             deltas[sup.agent_id]["executed_audit_rate"] = float(sup_act.values[0])
@@ -150,8 +208,25 @@ class RuleEngine:
         SUBSISTENCE_BASKET_QTY = 1.0
         expected_price = max(1.0, eco.base_living_cost / SUBSISTENCE_BASKET_QTY)
 
+        # TRẦN CHỈ SỐ HOÁ THEO GIÁ (ổn định số học -- xem chú thích đầy đủ tại nơi dùng cho
+        # chi tiêu sinh tồn ở Section 4). Tính SỚM ở đây (không phải trong Section 4) vì có
+        # MỘT kênh khác cũng chỉ số hoá theo expected_price CHƯA CHẶN TRẦN mà audit phát hiện:
+        # lương mặc định cho lao động MỚI chưa có wage gán (Section 3, dưới) dùng thẳng
+        # expected_price*1.05 -- nếu không chặn, kênh này tái tạo đúng vòng lặp phản hồi dương
+        # (giá -> lương mặc định -> thu nhập -> chi tiêu -> giá) mà trần vốn dùng để cắt, chỉ
+        # là qua một biến trung gian khác. Đo được: bỏ sót kênh này khiến hệ số khuếch đại trên
+        # trần lệch khỏi θ=0.70 (0.71-0.86 tuỳ mức cung thay vì đúng 0.70 ở MỌI mức, xem
+        # be/tests/test_env_contracts.py::test_price_indexation_loop_gain_equals_theta_above_ceiling).
+        indexation_ceiling = self.subsistence_indexation_ceiling_mult * eco.initial_living_cost
+        indexed_price = min(expected_price, indexation_ceiling)
+
         # 2. THỊ TRƯỜNG LAO ĐỘNG: ĐÀM PHÁN MRPL CÓ RÀNG BUỘC SỐNG CÒN
         ALPHA_CAPITAL = 0.3
+        # BETA_LABOR = 0.6 KHỚP tỷ trọng thu nhập lao động (labor income share) quan sát thực
+        # nghiệm ~0,6-0,7 ở đa số nền kinh tế (Gollin, D. (2002), "Getting Income Shares Right",
+        # Journal of Political Economy 110(2), 458-474) -- GIỮ NGUYÊN khi hiệu chỉnh lại quy mô
+        # MRPL (v0.19, xem self.mrpl_scale_constant), chỉ hằng số NHÂN (không phải số mũ phân
+        # phối thu nhập) mới là calibration tự do trong lần sửa này.
         BETA_LABOR = 0.6
         claimed_workers = {e.agent_id for e in active_employees if e.employed_by is not None}
         shuffled_firms = list(np.random.permutation(active_firms))
@@ -212,19 +287,54 @@ class RuleEngine:
 
                     next_l = current_effective_labor + candidate.skill_level
                     marginal_product = (
-                        BETA_LABOR * firm.productivity_factor * 
-                        (firm.capital_stock ** ALPHA_CAPITAL) * 
-                        (max(0.5, next_l) ** (BETA_LABOR - 1.0)) * 
+                        self.mrpl_scale_constant *
+                        BETA_LABOR * firm.productivity_factor *
+                        (firm.capital_stock ** ALPHA_CAPITAL) *
+                        (max(0.5, next_l) ** (BETA_LABOR - 1.0)) *
                         candidate.skill_level
                     )
-                    mrpl = expected_price * marginal_product
+                    # mrpl DÙNG indexed_price (đã chặn trần), KHÔNG dùng expected_price thô.
+                    # QUYẾT ĐỊNH ĐÃ CÂN NHẮC LẠI: bản đầu tiên định để mrpl dùng giá thô với lý
+                    # do "phải phản ánh đúng năng suất biên thực theo giá thị trường" -- SAI khi
+                    # kiểm chứng bằng số: ở giá 25 (gần đỉnh quan sát trong log train thật), với
+                    # tham số điển hình (skill=1.5, capital=10000, next_l=5), mrpl = giá ×
+                    # marginal_product ≈ 25 × 11,2 ≈ 281 -- gấp ~15 LẦN trần giá đã chặn (18) --
+                    # tức đây mới là kênh CHÍNH gây cóc lương quan sát được trong run train thật
+                    # (2026-09-22/23, lương TB tăng 8 lần trong 36 iteration), không phải
+                    # reservation_wage/negotiated_wage floor (đã chặn ở lượt sửa trước nhưng
+                    # KHÔNG đủ, xác nhận bằng test_wage_ratchet_converges_with_sustained_hiring).
+                    # Đánh đổi: mrpl không còn phản ánh "giá thị trường thô" khi giá vượt trần,
+                    # nhưng một khi trần đã tồn tại chính vì giá thô có thể trôi dạt không kiểm
+                    # soát được (Cagan, 1956), để MRPL tiếp tục dùng giá thô là tự phá vỡ mục
+                    # đích của trần qua một biến trung gian khác -- nhất quán với "độ cứng lương
+                    # thực" (real wage rigidity) như một cơ chế ổn định hoá trước cú sốc danh
+                    # nghĩa (Blanchard, O. J., & Katz, L. F. (1997), "What We Know and Do Not
+                    # Know About the Natural Rate of Unemployment", Journal of Economic
+                    # Perspectives 11(1), 51-72).
+                    mrpl = indexed_price * marginal_product
 
-                    # Lương bảo lưu sinh tồn (Reservation Wage): Phải đủ sống (Shapiro & Stiglitz, 1984)
-                    reservation_wage = max(expected_price * 1.02, expected_price * (0.8 + 0.3 * candidate.skill_level))
+                    # Lương bảo lưu sinh tồn (Reservation Wage): Phải đủ sống (Shapiro & Stiglitz, 1984).
+                    # DÙNG indexed_price (đã chặn trần), KHÔNG dùng expected_price thô -- đây là
+                    # SÀN LƯƠNG cho lao động MỚI, cùng bản chất subsistence với
+                    # subsistence_nominal_need (Section 4) và lương mặc định (dòng dùng
+                    # indexed_price ở trên). Phát hiện qua audit run train thật (2026-09-22/23):
+                    # lương mới luôn chốt theo giá thô đang tăng, và (do lương cũ KHÔNG BAO GIỜ
+                    # đàm phán lại -- wage = assigned_wage if assigned_wage > 0, xem Section 3)
+                    # mỗi đợt tuyển mới "khoá" một mức lương ngày càng cao vĩnh viễn -- tạo hiệu
+                    # ứng cóc lương (wage ratchet) nhiều bước, không nổ trong 1 bước nên
+                    # test_price_indexation_loop_gain_equals_theta_above_ceiling KHÔNG bắt được
+                    # (xem test_wage_ratchet_converges_with_sustained_hiring, tiêu chuẩn test
+                    # THỨ HAI bổ sung riêng cho lớp lỗi nhiều bước này). Tái tạo lỗi cũ: đặt
+                    # subsistence_indexation_ceiling_mult rất lớn (vd. 1e9) trong ScenarioConfig.
+                    reservation_wage = max(indexed_price * 1.02, indexed_price * (0.8 + 0.3 * candidate.skill_level))
 
                     # Đàm phán Nash: Công nhân chỉ đi làm nếu lương >= chi phí sống thực tế
                     if mrpl >= reservation_wage:
-                        negotiated_wage = max(expected_price, 0.5 * reservation_wage + 0.5 * mrpl)
+                        # Sàn negotiated_wage cũng dùng indexed_price (lý do như reservation_wage
+                        # ở trên) -- CHỈ sàn bị chặn, trung bình 0.5*reservation_wage + 0.5*mrpl
+                        # vẫn có thể vượt sàn nếu MRPL thực (chưa chặn) đủ cao, giữ đúng tinh
+                        # thần đàm phán Nash dựa trên năng suất thực.
+                        negotiated_wage = max(indexed_price, 0.5 * reservation_wage + 0.5 * mrpl)
 
                         claimed_workers.add(candidate.agent_id)
                         current_effective_labor = next_l
@@ -280,7 +390,12 @@ class RuleEngine:
                 emp_act = validated_actions.get(emp.agent_id)
                 effort = float(emp_act.values[0]) if emp_act is not None else 0.6
                 assigned_wage = deltas[emp.agent_id].get("wage", emp.wage)
-                wage = assigned_wage if assigned_wage > 0 else (expected_price * 1.05)
+                # Lương mặc định cho lao động MỚI (chưa từng được gán wage) dùng indexed_price
+                # (đã chặn trần), KHÔNG dùng expected_price thô -- nếu không, đây là kênh chỉ số
+                # hoá theo giá thứ hai bỏ sót trần, tái tạo lại đúng vòng lặp phản hồi dương mà
+                # trần ở Section 4 vốn để cắt (xem chú thích indexed_price ở đầu hàm; phát hiện
+                # qua audit be/tests/test_env_contracts.py::test_price_indexation_loop_gain_equals_theta_above_ceiling).
+                wage = assigned_wage if assigned_wage > 0 else (indexed_price * 1.05)
 
                 wage_bill += wage
                 worker_gross_incomes[emp.agent_id] += wage
@@ -294,7 +409,10 @@ class RuleEngine:
                 events_map[firm.agent_id].append(EventType.WAGE_PAID.value)
                 events_map[emp.agent_id].append(EventType.WAGE_PAID.value)
 
-            physical_q = firm.productivity_factor * (firm.capital_stock ** ALPHA_CAPITAL) * (effective_l ** BETA_LABOR) if effective_l > 0.0 else 0.0
+            # self.mrpl_scale_constant AP DUNG O DAY (giong marginal_product o Section 2) de giu
+            # dung quan he dao ham marginal_product = d(physical_q)/d(effective_l) -- xem chu
+            # thich day du tai __init__.
+            physical_q = self.mrpl_scale_constant * firm.productivity_factor * (firm.capital_stock ** ALPHA_CAPITAL) * (effective_l ** BETA_LABOR) if effective_l > 0.0 else 0.0
             firm_physical_outputs[firm.agent_id] = physical_q
             firm_wage_bills[firm.agent_id] = wage_bill
 
@@ -312,10 +430,110 @@ class RuleEngine:
         total_informal_output = sum(informal_physical_outputs.values())
         total_real_supply = total_industrial_output + total_informal_output
 
+        # 3B. TÍN DỤNG TIÊU DÙNG KHÔNG THẾ CHẤP (Unsecured Consumer Credit, v0.23)
+        #
+        # Zeldes, S. P. (1989), "Consumption and Liquidity Constraints: An Empirical
+        # Investigation", Journal of Political Economy 97(2), 305-346 -- bằng chứng thực
+        # nghiệm hộ gia đình BỊ RÀNG BUỘC THANH KHOẢN sẽ vay để làm trơn tiêu dùng qua cú
+        # sốc thu nhập, nếu tiếp cận được tín dụng. Kết hợp với khung "hạn mức vay tự nhiên"
+        # (natural borrowing limit, tỷ lệ thu nhập kỳ vọng) trong chính khung buffer-stock đã
+        # dùng xuyên suốt file này cho Section 8B (Deaton, 1991; Carroll, 1997) -- khác Firm ở
+        # Section 5 (thế chấp bằng capital_stock, Kiyotaki & Moore 1997), Employee KHÔNG có
+        # tài sản vật chất để thế chấp nên hạn mức neo vào THU NHẬP, không phải tài sản.
+        #
+        # ĐIỀU KIỆN KÍCH HOẠT: CHỈ vay khi tài sản thanh khoản (cash + tiền gửi, đã trừ phần
+        # sẽ rút để chi tiêu ở Section 4 -- nhưng Section 3B chạy TRƯỚC Section 4 nên dùng
+        # đúng công thức liquid_est = cash + deposit, KHỚP với công thức Section 4/8B dùng)
+        # không đủ chi tiêu sinh tồn tháng này VÀ agent chủ động phát tín hiệu muốn vay
+        # (borrow_intensity > 0.4, cùng ngưỡng với Firm.borrow_signal ở Section 5) -- không
+        # phải một khoản vay vô điều kiện.
+        #
+        # QUY MÔ KHOẢN VAY: bị chặn bởi CẢ hạn mức (thu nhập) LẪN đúng phần thiếu hụt thực sự
+        # (shortfall) -- vay không bao giờ vượt quá khoảng cách còn thiếu tới mức sinh tồn,
+        # nhân với borrow_intensity (agent có thể chọn vay MỘT PHẦN khoảng thiếu hụt, phần còn
+        # lại chấp nhận cắt giảm tiêu dùng) và risk_discount (Kimball, 1990, cùng cơ chế đã
+        # dùng cho Firm.risk_aversion ở Section 5 -- nhất quán, không bịa thêm công thức mới).
+        #
+        # VỠ NỢ: KHÔNG có tài sản thế chấp để thu hồi (khác Merton/Firm Section 8) -- khi
+        # Employee chết còn nợ, TOÀN BỘ dư nợ thành nợ xấu 100% cho ngân hàng chủ nợ (xem
+        # Section 9 dưới, nhánh "GHI NHẬN NỢ XẤU KHI EMPLOYEE CHẾT").
+        K_CREDIT_INCOME_MULT = 3.0  # HỆ SỐ CẤU TRÚC TỰ DO HIỆU CHỈNH: hạn mức vay = N tháng thu nhập kỳ vọng
+
+        for emp in active_employees:
+            emp_act = validated_actions.get(emp.agent_id)
+            borrow_intensity = float(emp_act.values[3]) if emp_act is not None and len(emp_act.values) > 3 else 0.0
+
+            current_cash_est = emp.cash + deltas[emp.agent_id].get("cash_delta", 0.0)
+            deposit_now = max(0.0, getattr(emp, "bank_deposit", 0.0))
+            liquid_est = max(0.0, current_cash_est) + deposit_now
+            subsistence_nominal_need = SUBSISTENCE_BASKET_QTY * indexed_price
+            shortfall = max(0.0, subsistence_nominal_need - liquid_est)
+
+            # Thu nhập kỳ vọng làm cơ sở hạn mức: lương THÁNG NÀY nếu có việc (worker_gross_incomes
+            # đã được Section 3 điền cho người có việc); nếu thất nghiệp, worker_gross_incomes vẫn =
+            # 0.0 tại ĐÚNG thời điểm này (thu nhập phi chính thức chỉ được cộng ở Section 4, chạy SAU
+            # Section 3B) -- dùng lại ĐÚNG công thức thu nhập phi chính thức (0.35 * skill_level) làm
+            # proxy, tính trực tiếp thay vì đọc dict chưa điền, tránh sai số do thứ tự thực thi.
+            expected_monthly_income = worker_gross_incomes.get(emp.agent_id, 0.0)
+            if expected_monthly_income <= 0.0:
+                expected_monthly_income = 0.35 * emp.skill_level * indexed_price
+
+            existing_debt = emp.debt
+            borrowing_limit = max(0.0, K_CREDIT_INCOME_MULT * expected_monthly_income - existing_debt)
+
+            need_credit_relationship = (existing_debt > 0.0) or (shortfall > 0.0 and borrow_intensity > 0.4)
+            if not need_credit_relationship:
+                continue
+
+            # Quan hệ tín dụng (relationship banking, Petersen & Rajan, 1994) -- CÙNG mẫu hình
+            # với Firm ở Section 5: giữ nguyên ngân hàng chủ nợ cho tới khi tất toán.
+            existing_creditor = getattr(emp, "creditor_bank_id", None)
+            if existing_creditor not in bank_lookup or emp.debt <= 0.0:
+                eligible_lenders = [b for b in banks if b.reserves > RESERVE_LENDING_FLOOR]
+                pool = eligible_lenders if eligible_lenders else banks
+                creditor_id = min(pool, key=lambda b: executed_lending_rate[b.agent_id]).agent_id
+            else:
+                creditor_id = existing_creditor
+            deltas[emp.agent_id]["creditor_bank_id"] = creditor_id
+            creditor_bank = bank_lookup[creditor_id]
+            lending_rate = executed_lending_rate[creditor_id]
+            credit_factor = executed_credit_factor[creditor_id]
+
+            if (shortfall > 0.0 and borrow_intensity > 0.4
+                    and creditor_bank.reserves > RESERVE_LENDING_FLOOR and borrowing_limit > 0.0):
+                risk_discount = 1.0 - 0.3 * float(np.clip(getattr(emp, "risk_aversion", 0.5), 0.0, 1.0))
+                loan_request = min(borrowing_limit, shortfall * borrow_intensity * credit_factor * risk_discount)
+                deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) + loan_request
+                deltas[emp.agent_id]["debt_delta"] = deltas[emp.agent_id].get("debt_delta", 0.0) + loan_request
+                deltas[creditor_id]["loans_delta"] = deltas[creditor_id].get("loans_delta", 0.0) + loan_request
+                deltas[creditor_id]["reserves_delta"] = deltas[creditor_id].get("reserves_delta", 0.0) - loan_request
+
+                self._emit_event(EventType.LOAN_DISBURSED, creditor_id, emp.agent_id, {"amount": round(loan_request, 1)}, timestep)
+                events_map[creditor_id].append(EventType.LOAN_DISBURSED.value)
+                events_map[emp.agent_id].append(EventType.LOAN_DISBURSED.value)
+
+            if emp.debt > 0.0:
+                monthly_interest = emp.debt * (lending_rate / 12.0)
+                principal_repayment = 0.0
+                # CHỈ trả gốc khi KHÔNG còn thiếu hụt thanh khoản (sinh tồn luôn ưu tiên trước
+                # trả nợ -- tránh vòng xoáy "nhịn ăn để trả nợ" mà không có cơ sở lý thuyết nào
+                # biện minh, khác hẳn tinh thần Deaton/Carroll buffer-stock).
+                if shortfall <= 0.0:
+                    principal_repayment = min(emp.debt, emp.debt * 0.05)
+
+                total_credit_payment = monthly_interest + principal_repayment
+                deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) - total_credit_payment
+                deltas[emp.agent_id]["debt_delta"] = deltas[emp.agent_id].get("debt_delta", 0.0) - principal_repayment
+
+                deltas[creditor_id]["interest_income"] = deltas[creditor_id].get("interest_income", 0.0) + monthly_interest
+                deltas[creditor_id]["reserves_delta"] = deltas[creditor_id].get("reserves_delta", 0.0) + total_credit_payment
+                deltas[creditor_id]["loans_delta"] = deltas[creditor_id].get("loans_delta", 0.0) - principal_repayment
+
         # 4. TIÊU DÙNG & ĐỊNH GIÁ KẾT DÍNH CALVO CHUẨN (Calvo, 1983)
         total_consumer_spending = 0.0
 
-        # TRẦN CHỈ SỐ HOÁ CHI TIÊU SINH TỒN THEO GIÁ (ổn định số học).
+        # TRẦN CHỈ SỐ HOÁ CHI TIÊU SINH TỒN THEO GIÁ (ổn định số học -- indexed_price đã tính
+        # sẵn ở đầu hàm cùng expected_price, dùng chung với lương mặc định ở Section 3).
         # Chi tiêu sinh tồn danh nghĩa = QTY × giá kỳ trước là dạng Stone-Geary/LES
         # (Stone, R. (1954), "Linear Expenditure Systems and Demand Analysis",
         # Economic Journal 64(255)) -- giữ NGUYÊN dạng hàm. Nhưng kết hợp với
@@ -333,9 +551,6 @@ class RuleEngine:
         # P_{t-1} về đúng θ < 1 -> vòng lặp bị CẮT (không phải chỉ giới hạn tốc độ tăng
         # kiểu ±x%/kỳ vốn chỉ làm chậm phân kỳ). Dưới trần hành vi Stone-Geary giữ
         # nguyên. mult là HỆ SỐ HIỆU CHỈNH ổn định số học (không suy từ Stone/Cagan).
-        indexation_ceiling = self.subsistence_indexation_ceiling_mult * eco.initial_living_cost
-        indexed_price = min(expected_price, indexation_ceiling)
-
         for emp in active_employees:
             emp_act = validated_actions.get(emp.agent_id)
             consume_propensity = float(emp_act.values[2]) if emp_act is not None else 0.5
@@ -442,10 +657,29 @@ class RuleEngine:
         # không phải trợ cấp đồng đều theo đầu người bất kể có việc hay không
         # -- quy mô bơm tự động tăng đúng lúc cần (thất nghiệp cao), giảm về 0
         # khi toàn dụng lao động, đúng tính chất automatic stabilizer.
-        eco_act = validated_actions.get(eco.agent_id)
-        # Action đã được Economy.validate_action() clip vào [-0.20, 0.20],
-        # không clip lại ở đây (tránh trùng lặp logic biên).
-        demand_injection_ratio = float(eco_act.values[0]) if eco_act is not None else 0.0
+        #
+        # === CHUYỂN CHỦ THỂ QUYẾT ĐỊNH TỪ ECONOMY SANG GOVERNMENT (v0.22) ===
+        # Phát hiện qua "audit tính mạch lạc kinh tế tổng thể" (2026-09-23, đề xuất của
+        # Claude Web, xem KNOWN_PATHOLOGIES.md mục mới): hành động này TRƯỚC ĐÂY do Economy
+        # quyết định (tự nhận là "Market Maker" -- định giá/quản lý nhà đất, KHÔNG phải cơ
+        # quan tài khoá), trong khi Section 4C ngay dưới (G, cùng chi từ Kho bạc) lại do
+        # Government quyết định -- HAI tác tử RL độc lập, reward khác hẳn nhau, không phối
+        # hợp, cùng tác động lên MỘT ngân sách. Vi phạm trực tiếp nguyên tắc hai tầng của AI
+        # Economist (Zheng et al., 2022) đã ghi trong CLAUDE.md ("chỉ Government mới mang
+        # trách nhiệm phúc lợi xã hội qua chính sách"). Đối chiếu dữ liệu train thật (checkpoint
+        # iter_40, 40 iteration): reward Government dao động mạnh (biên độ ~40, 9 lần đổi chiều
+        # xu hướng) trong khi Economy hội tụ phẳng (biên độ ~3) -- không cô lập được nguyên
+        # nhân do run đó còn nhiễu bởi lỗi zombie-firm (mục #13) và có thể cả các lệch chuẩn
+        # định cỡ khác đã sửa sau đó, nhưng KHÔNG mâu thuẫn với giả thuyết bất ổn do 2 policy
+        # không phối hợp cùng tranh chấp một ngân sách (non-stationarity kinh điển trong MARL).
+        # Người dùng xác nhận: (1) không muốn một tác tử "ngân hàng trung ương" (giữ nguyên mô
+        # hình nhiều Bank cạnh tranh), (2) ý định thiết kế GỐC của Economy là đại diện thị
+        # trường/giá cả chung (chi phí sinh hoạt, giá nhà, giá đất -- những thứ Gov/Bank không
+        # trực tiếp kiểm soát), KHÔNG phải một chủ thể chi ngân sách. Sửa: chuyển hẳn action
+        # này sang Government (action[3], xem government.py::decide()) -- Economy quay về đúng
+        # 100% vai trò giá cả/thị trường ban đầu (2 chiều housing hiện có sẵn ở economy.py vẫn
+        # là placeholder chờ housing epic, không đổi).
+        demand_injection_ratio = float(gov_act.values[3]) if gov_act is not None else 0.0
         demand_injection_base = SUBSISTENCE_BASKET_QTY * eco.initial_living_cost * max(1, len(unemployed_emps))
         total_consumer_spending_after_injection = max(0.0, total_consumer_spending + (demand_injection_ratio * demand_injection_base))
         # Chênh lệch THỰC TẾ (sau khi kẹp sàn 0) là số tiền Kho bạc phải chi
@@ -455,8 +689,8 @@ class RuleEngine:
         # Government.apply_result), không tự sinh/mất tiền.
         demand_injection_effect = total_consumer_spending_after_injection - total_consumer_spending
         total_consumer_spending = total_consumer_spending_after_injection
-        deltas[eco.agent_id]["demand_injection_ratio"] = demand_injection_ratio
-        deltas[eco.agent_id]["demand_injection_effect"] = demand_injection_effect
+        deltas[gov.agent_id]["demand_injection_ratio"] = demand_injection_ratio
+        deltas[gov.agent_id]["demand_injection_effect"] = demand_injection_effect
         deltas[gov.agent_id]["demand_injection_cost"] = deltas[gov.agent_id].get("demand_injection_cost", 0.0) + demand_injection_effect
 
         # 4C. CHI TIÊU MUA HÀNG CỦA CHÍNH PHỦ (Government Purchases, G) -- ĐÓNG VÒNG CHU CHUYỂN.
@@ -493,6 +727,49 @@ class RuleEngine:
         deltas[gov.agent_id]["government_purchase_cost"] = government_purchases
         deltas[gov.agent_id]["executed_purchase_ratio"] = purchase_ratio
 
+        # 4D. BÌNH ỔN THỊ TRƯỜNG BẰNG DỰ TRỮ ĐỆM (Buffer-Stock Market Stabilization, v0.24)
+        # Newbery, D. M. G., & Stiglitz, J. E. (1981), "The Theory of Commodity Price
+        # Stabilization: A Study in the Economics of Risk", Oxford University Press;
+        # Knudsen, O., & Nash, J. (1990), "Domestic Price Stabilization Schemes in
+        # Developing Countries", Economic Development and Cultural Change 38(3), 539-558.
+        # Xem METHODOLOGY_NOTES.md mục 2 cho toàn bộ phân tích gain/kiểm chứng an toàn đã
+        # làm TRƯỚC khi viết đoạn này (đại số + thực nghiệm cô lập, nhiều mức cung, test
+        # đối kháng "luôn mua"/"luôn bán", test tương tác với Section 4B).
+        #
+        # Economy giữ MỘT bảng cân đối kế toán riêng (KHÔNG phải Treasury): eco.strategic_
+        # reserve_fund (tiền) + eco.strategic_reserve_stock (hàng thiết yếu, đơn vị vật lý).
+        # Hành động intervention_intensity ∈ [-1,1]: dương = MUA (hỗ trợ giá khi giảm phát),
+        # âm = BÁN (hạ giá khi lạm phát) -- phản hồi ÂM (ổn định) về bản chất.
+        #
+        # QUY MÔ can thiệp neo vào eco.initial_living_cost (hằng số CỐ ĐỊNH lúc reset episode),
+        # TUYỆT ĐỐI KHÔNG dùng expected_price/market_clearing_price (giá SỐNG) -- đúng bài học
+        # từ 2 lần lỗi vòng lặp phản hồi dương trước đó (bơm cầu v0.12, sàn lương v0.18/19, xem
+        # KNOWN_PATHOLOGIES.md #2, #8). Chiều BÁN quy đổi lượng hàng CŨNG dùng initial_living_cost
+        # (không dùng expected_price) -- bản nháp đầu tiên dùng expected_price cho chiều bán và
+        # ĐÃ ĐO ĐƯỢC gain lệch dần khỏi theta khi cung khan hiếm (0.70->0.84 ở cung 8%), sửa
+        # trước khi đưa vào đây (xem METHODOLOGY_NOTES.md).
+        #
+        # Chiều MUA CHỈ cộng vào total_consumer_spending (cạnh tranh cầu, giống hộ gia đình/G) --
+        # KHÔNG trừ total_real_supply -- nên về cấu trúc KHÔNG THỂ tự đẩy cung xuống ngưỡng nguy
+        # hiểm của kênh tiêu dùng (đã verify bằng số, xem METHODOLOGY_NOTES.md). Chiều BÁN cộng
+        # vào total_real_supply (giải phóng tồn kho, tăng cung hiệu dụng thật).
+        # Cả hai chiều tự giới hạn bởi ràng buộc tài chính/vật lý thật (không mua quá vốn, không
+        # bán quá tồn kho) -- không cần thêm logic chặn nào khác.
+        eco_act = validated_actions.get(eco.agent_id)
+        intervention_intensity = float(np.clip(eco_act.values[0], -1.0, 1.0)) if eco_act is not None else 0.0
+        buffer_intervention_base = SUBSISTENCE_BASKET_QTY * eco.initial_living_cost * max(1, len(active_employees))
+        nominal_intervention = intervention_intensity * buffer_intervention_base
+
+        buffer_buy_spend = 0.0
+        buffer_sell_qty = 0.0
+        if nominal_intervention > 0.0:
+            buffer_buy_spend = min(nominal_intervention, eco.strategic_reserve_fund)
+            total_consumer_spending += buffer_buy_spend
+        elif nominal_intervention < 0.0:
+            desired_qty = abs(nominal_intervention) / max(0.5, eco.initial_living_cost)
+            buffer_sell_qty = min(desired_qty, eco.strategic_reserve_stock)
+            total_real_supply += buffer_sell_qty
+
         # CÂN BẰNG GIÁ CALVO (Calvo, 1983 Staggered Price Setting):
         # P*_t: Giá cân bằng Walras tức thời nếu 100% doanh nghiệp đổi giá
         instant_clearing_price = total_consumer_spending / max(1.0, total_real_supply)
@@ -500,6 +777,37 @@ class RuleEngine:
         THETA_CALVO = 0.70
         market_clearing_price = float(THETA_CALVO * expected_price + (1.0 - THETA_CALVO) * instant_clearing_price)
         market_clearing_price = max(1.0, market_clearing_price)
+
+        # 4D (tiếp): chốt sổ kho/quỹ của Economy SAU khi giá đã chốt (tránh vòng lặp đồng thời --
+        # qty_bought là đại lượng PHÁI SINH sau giá, không phải đầu vào của chính công thức giá).
+        #
+        # LOI DA SUA (v0.24, phat hien qua chinh be/tests/test_sfc_random_policy.py -- KHONG
+        # phai gia dinh, la loi that): ban dau chieu BAN cong thang "qty_sold * market_clearing_
+        # price" vao quy Economy nhu MOT KHOAN THU DOC LAP -- nhung khong co tac tu nao khac bi
+        # TRU tien tuong ung (total_real_supply da tang them buffer_sell_qty, nhung industrial_
+        # revenue_pool/informal_revenue_pool o Section duoi VAN chia theo dung ty trong tren
+        # total_real_supply MOI -- nghia la tong 2 pool do < total_consumer_spending, phan con
+        # thieu "boc hoi" khong ai nhan, DONG THOI Economy lai duoc cong them mot khoan MOI hoan
+        # toan tach biet). Hai loi nay cong lai gay ro ri SFC that (do duoc bien do 15-100 khi
+        # chay be/tests/test_sfc_random_policy.py, dau/do lon thay doi ngau nhien tuy hanh dong).
+        # SUA DUNG: chieu BAN phai nhan DUNG phan chia theo ty trong dong gop vao total_real_
+        # supply, y het co che Firm/khu vuc phi chinh thuc da dung (Section duoi) -- dam bao
+        # TONG 3 phan (industrial + informal + buffer) cong dung bang total_consumer_spending,
+        # khong con phan nao "boc hoi" hay duoc tao them tu hu khong.
+        buffer_fund_delta = 0.0
+        buffer_stock_delta = 0.0
+        if buffer_buy_spend > 0.0:
+            buffer_fund_delta = -buffer_buy_spend
+            buffer_stock_delta = buffer_buy_spend / market_clearing_price
+            self._emit_event(EventType.GOODS_PURCHASED, eco.agent_id, eco.agent_id, {"amount": round(buffer_buy_spend, 1), "reason": "buffer_stock_buy"}, timestep)
+        elif buffer_sell_qty > 0.0:
+            buffer_revenue_pool = total_consumer_spending * (buffer_sell_qty / max(1.0, total_real_supply))
+            buffer_stock_delta = -buffer_sell_qty
+            buffer_fund_delta = buffer_revenue_pool
+            self._emit_event(EventType.GOODS_PURCHASED, eco.agent_id, eco.agent_id, {"amount": round(buffer_fund_delta, 1), "reason": "buffer_stock_sell"}, timestep)
+        deltas[eco.agent_id]["strategic_reserve_fund_delta"] = buffer_fund_delta
+        deltas[eco.agent_id]["strategic_reserve_stock_delta"] = buffer_stock_delta
+        deltas[eco.agent_id]["executed_intervention_intensity"] = intervention_intensity
 
         # PHÂN BỔ DOANH THU KHÉP KÍN 100% SFC (Godley & Lavoie, 2007)
         industrial_revenue_pool = total_consumer_spending * (total_industrial_output / max(1.0, total_real_supply))
@@ -585,7 +893,7 @@ class RuleEngine:
             deltas[emp.agent_id]["energy_delta"] = deltas[emp.agent_id].get("energy_delta", 0.0) + energy_rec
 
         # 5. TÍN DỤNG THẾ CHẤP NỘI SINH (Kiyotaki & Moore, 1997)
-        RESERVE_LENDING_FLOOR = 5000.0  # hệ số cấu trúc: dự trữ tối thiểu để còn được phép cho vay
+        # RESERVE_LENDING_FLOOR đã hoist lên đầu hàm (dùng chung với Section 3B).
         for firm in active_firms:
             f_act = validated_actions.get(firm.agent_id)
             borrow_signal = float(f_act.values[1]) if f_act is not None else 0.0
@@ -615,7 +923,29 @@ class RuleEngine:
             borrowing_headroom = max(0.0, collateral_value - firm.debt)
 
             if borrow_signal > 0.4 and creditor_bank.reserves > RESERVE_LENDING_FLOOR and borrowing_headroom > 0.0:
-                loan_request = min(borrowing_headroom, 1000.0 * borrow_signal * credit_factor)
+                # He so han che vay THEO DAC DIEM E NGAI RUI RO NOI TAI cua firm (v0.20,
+                # xem KNOWN_PATHOLOGIES.md). TRUOC BAN VA NAY: firm.risk_aversion duoc
+                # khoi tao/ke thua qua sinh san (env.py) nhung KHONG anh huong bat ky
+                # cong thuc kinh te nao -- phat hien qua audit toan du an.
+                # GHI CHU PHAM VI TRICH DAN (sua sau phan bien cua Claude Web,
+                # 2026-09-23 -- ban dau trich Froot, Scharfstein & Stein (1993) nhung
+                # bi chi ra SAI CO CHE: FSS (1993) mo hinh hoa CHI PHI LOI CUA VON HUY
+                # DONG BEN NGOAI (convex cost of external finance) va dong luc HEDGING
+                # (phai sinh) de tranh underinvestment khi co hoi dau tu tuong quan voi
+                # dong tien noi bo -- KHONG phai mo hinh "risk_aversion lam giam tuyen
+                # tinh muc vay". Dung dung mot trich dan DUY NHAT cho ca Employee lan
+                # Firm o day: Kimball, M. S. (1990), "Precautionary Saving in the Small
+                # and in the Large", Econometrica 58(1), 53-73 -- dong co phong ngua
+                # (precautionary motive) truoc bat dinh thu nhap/chi phi tuong lai ap
+                # dung CHUNG cho bat ky tac tu ra quyet dinh tai chinh nao (ho gia dinh
+                # LAN chu doanh nghiep, vi trong mo hinh don gian hoa nay Firm thuc chat
+                # la MOT nguoi ra quyet dinh duy nhat gan risk_aversion) -- day la MO
+                # RONG/tuong tu hoa (analogy) dong co Kimball sang quyet dinh don bay
+                # doanh nghiep, KHONG PHAI ap dung truc tiep mot mo hinh tai chinh doanh
+                # nghiep cu the nao. He so 0.3 la HE SO CAU TRUC TU DO HIEU CHINH (bien
+                # do giam vay toi da ~30% o risk_aversion=1.0), khong suy ra tu Kimball.
+                risk_discount = 1.0 - 0.3 * float(np.clip(getattr(firm, "risk_aversion", 0.3), 0.0, 1.0))
+                loan_request = min(borrowing_headroom, 1000.0 * borrow_signal * credit_factor * risk_discount)
                 deltas[firm.agent_id]["cash_delta"] = deltas[firm.agent_id].get("cash_delta", 0.0) + loan_request
                 deltas[firm.agent_id]["debt_delta"] = deltas[firm.agent_id].get("debt_delta", 0.0) + loan_request
                 deltas[creditor_id]["loans_delta"] = deltas[creditor_id].get("loans_delta", 0.0) + loan_request
@@ -639,6 +969,39 @@ class RuleEngine:
                 deltas[creditor_id]["interest_income"] = deltas[creditor_id].get("interest_income", 0.0) + monthly_interest
                 deltas[creditor_id]["reserves_delta"] = deltas[creditor_id].get("reserves_delta", 0.0) + total_bank_payment
                 deltas[creditor_id]["loans_delta"] = deltas[creditor_id].get("loans_delta", 0.0) - principal_repayment
+
+        # 5B. TRẢ NỢ CỨU TRỢ KHẨN CẤP (Bailout Debt Servicing) -- Bagehot, W. (1873),
+        # "Lombard Street" -- vế "at a HIGH RATE" của học thuyết lender-of-last-resort
+        # (xem chú thích đầy đủ tại env.py::step(), nhánh "NGƯỜI CHO VAY CUỐI CÙNG", và
+        # Bank.__init__::bailout_penalty_rate). Cùng CẤU TRÚC với vòng lặp trả nợ Firm ở
+        # Section 5 ngay trên (lãi + trả gốc 5%/tháng khi đủ khả năng) -- ĐÚNG NGHĨA Bank
+        # lúc này là bên ĐI VAY (con nợ) của Kho bạc, không phải bên cho vay. Lãi phạt
+        # chảy THẲNG về Kho bạc (không tạo/huỷ tiền, chỉ chuyển hướng dòng tiền vốn đã
+        # tồn tại -- bảo toàn SFC), qua kênh "bailout_repayment" mà Government.apply_result
+        # cộng vào net_budget cùng cách xử lý "fines_collected".
+        for b in banks:
+            if b.bailout_debt <= 0.0:
+                continue
+            monthly_penalty_interest = b.bailout_debt * (b.bailout_penalty_rate / 12.0)
+            principal_repayment = 0.0
+            # Chỉ trả bớt gốc khi Bank còn dư dự trữ AN TOÀN (trên yêu cầu dự trữ bắt
+            # buộc) sau khi đã trả lãi phạt -- tránh Bank tự đẩy mình xuống dưới ngưỡng
+            # dự trữ bắt buộc chỉ để trả nợ nhanh.
+            required_reserves = b.total_deposits * b.reserve_requirement_ratio
+            if (b.reserves - monthly_penalty_interest) > required_reserves:
+                principal_repayment = min(b.bailout_debt, b.bailout_debt * 0.05)
+
+            total_bailout_payment = monthly_penalty_interest + principal_repayment
+            deltas[b.agent_id]["reserves_delta"] = deltas[b.agent_id].get("reserves_delta", 0.0) - total_bailout_payment
+            deltas[b.agent_id]["bailout_debt_delta"] = deltas[b.agent_id].get("bailout_debt_delta", 0.0) - principal_repayment
+            # "interest_expense" là kênh BÁO CÁO (Bank.apply_result đọc vào
+            # last_interest_expense) mà calculate_reward() đã dùng sẵn cho
+            # net_interest_margin -- tái dụng ĐÚNG kênh này (giống Section 8B
+            # đã làm cho lãi tiền gửi trả người gửi) để lãi phạt bailout hiện
+            # NGAY trong reward tháng này thay vì chỉ ngấm gián tiếp qua
+            # reserves ở các tháng sau, không cần sửa công thức reward.
+            deltas[b.agent_id]["interest_expense"] = deltas[b.agent_id].get("interest_expense", 0.0) + monthly_penalty_interest
+            deltas[gov.agent_id]["bailout_repayment"] = deltas[gov.agent_id].get("bailout_repayment", 0.0) + total_bailout_payment
 
         # 6. THUẾ VÀ GIAN LẬN TOÀN DIỆN (Allingham & Sandmo, 1972)
         total_tax_collected = 0.0
@@ -832,7 +1195,16 @@ class RuleEngine:
                     EventType.AGENT_BANKRUPT,
                     firm.agent_id,
                     creditor_id,
-                    {"bad_debt": round(bad_debt, 1), "recovered": round(cash_seized, 1), "cash": round(firm.cash, 1)},
+                    # LOI DA SUA (v0.23, phat hien khi them tin dung tieu dung Employee lam lo ro):
+                    # "bad_debt" o day KHONG duoc lam tron -- be/tests/test_sfc_accounting.py va
+                    # test_sfc_random_policy.py DOC LAI DUNG gia tri nay de doi chieu voi thuc te
+                    # bank.reserves da giam bao nhieu (deltas[creditor_id]["new_defaults"] dung gia
+                    # tri KHONG lam tron o dong tren). Truoc day round(bad_debt, 1) lam sai lech toi
+                    # 0.05 don vi tien te moi lan phat sinh no xau -- vuot han SFC_TOLERANCE=1e-3,
+                    # tao "ro ri" GIA trong kiem toan SFC du dong tien thuc te van bao toan dung.
+                    # "recovered"/"cash" van lam tron binh thuong vi CHI phuc vu hien thi/log, khong
+                    # tac tu/test nao doc lai de doi chieu bao toan.
+                    {"bad_debt": bad_debt, "recovered": round(cash_seized, 1), "cash": round(firm.cash, 1)},
                     timestep
                 )
                 events_map[firm.agent_id].append(EventType.AGENT_BANKRUPT.value)
@@ -875,9 +1247,20 @@ class RuleEngine:
         # ngân hàng có deposit_rate cao nhất; nếu đang có số dư, DUY TRÌ đúng
         # ngân hàng đó.
         K_LIQUIDITY_BUFFER = 2.0
-        deposit_buffer_target = K_LIQUIDITY_BUFFER * actual_living_cost
 
         for emp in active_employees:
+            # De dem an toan THEO DAC DIEM E NGAI RUI RO NOI TAI cua tung ho gia dinh
+            # (v0.20, xem KNOWN_PATHOLOGIES.md). Kimball, M. S. (1990), "Precautionary
+            # Saving in the Small and in the Large", Econometrica 58(1), 53-73 -- ho gia
+            # dinh cang e ngai rui ro cang giu muc dem thanh khoan muc tieu lon hon truoc
+            # bat dinh thu nhap tuong lai (chinh khai niem "prudence" trong ly thuyet tieu
+            # dung). TRUOC BAN VA NAY: emp.risk_aversion duoc khoi tao/dot bien ke thua qua
+            # sinh san (env.py) nhung KHONG anh huong bat ky cong thuc kinh te nao -- phat
+            # hien qua audit toan du an. He so nhan (1.0 + risk_aversion) la HE SO CAU TRUC
+            # TU DO HIEU CHINH (risk_aversion~0 -> dem ~K_LIQUIDITY_BUFFER goc; ~1 -> dem
+            # gap doi), KHONG suy ra truc tiep tu Kimball (1990) (chi xac lap CHIEU tac
+            # dong, khong cho cong thuc ty le cu the).
+            deposit_buffer_target = K_LIQUIDITY_BUFFER * (1.0 + float(np.clip(getattr(emp, "risk_aversion", 0.5), 0.0, 1.0))) * actual_living_cost
             current_cash_est = emp.cash + deltas[emp.agent_id].get("cash_delta", 0.0)
             # Số dư gửi đầu kỳ SAU khi trừ phần đã rút để chi tiêu ở Mục 4 (pre_spend_
             # withdrawal): lãi và tái cân bằng tính trên số dư còn lại; deposit_delta cuối
@@ -993,17 +1376,46 @@ class RuleEngine:
                     deltas[emp_firm].setdefault("fired_employees", []).append(emp.agent_id)
                 deltas[emp.agent_id]["employed_by"] = None
 
+                # GHI NHẬN NỢ XẤU KHI EMPLOYEE CHẾT (v0.23, tín dụng tiêu dùng Section 3B) --
+                # KHÁC Firm Merton (Section 8): Employee KHÔNG có capital_stock để thế chấp,
+                # nên khi chết còn nợ, TOÀN BỘ dư nợ là mất trắng 100% cho ngân hàng chủ nợ
+                # (không có haircut/thu hồi tài sản nào để tính) -- đúng bản chất tín dụng tiêu
+                # dùng KHÔNG THẾ CHẤP thật (unsecured personal debt: người vay chết, không có
+                # di sản đảm bảo, ngân hàng ghi lỗ toàn bộ, thông lệ chuẩn ngành ngân hàng bán
+                # lẻ). projected_debt dùng ĐÚNG debt_delta đã tính tới Section 3B/8B cùng bước
+                # này (không phải emp.debt cũ) để không bỏ sót khoản vừa vay/vừa trả cùng tháng.
+                projected_debt = max(0.0, emp.debt + deltas[emp.agent_id].get("debt_delta", 0.0))
+                bad_debt_on_death = 0.0
+                if projected_debt > 0.0:
+                    creditor_id = deltas[emp.agent_id].get("creditor_bank_id", getattr(emp, "creditor_bank_id", None))
+                    if creditor_id not in bank_lookup:
+                        creditor_id = bank.agent_id
+                    bad_debt_on_death = projected_debt
+                    deltas[emp.agent_id]["debt_delta"] = deltas[emp.agent_id].get("debt_delta", 0.0) - projected_debt
+                    deltas[creditor_id]["loans_delta"] = deltas[creditor_id].get("loans_delta", 0.0) - projected_debt
+                    deltas[creditor_id]["new_defaults"] = deltas[creditor_id].get("new_defaults", 0.0) + projected_debt
+
                 death_reason = "Tuổi già" if (emp.age + deltas[emp.agent_id]["age_increment"]) >= emp.max_age else "Kiệt quệ sinh học / Nợ cùng quẫn"
                 self._emit_event(
-                    EventType.AGENT_DIED, 
-                    emp.agent_id, 
-                    gov.agent_id, 
-                    {"age": emp.age, "reason": death_reason}, 
+                    EventType.AGENT_DIED,
+                    emp.agent_id,
+                    gov.agent_id,
+                    # "bad_debt" KHONG lam tron -- xem chu thich day du tai AGENT_BANKRUPT o Section 8
+                    # (cung lop loi lam tron gia tri dung de doi chieu bao toan SFC, phat hien qua
+                    # chinh test khi them tin dung tieu dung Employee o v0.23).
+                    {"age": emp.age, "reason": death_reason, "bad_debt": bad_debt_on_death},
                     timestep
                 )
                 events_map[emp.agent_id].append(EventType.AGENT_DIED.value)
 
         deltas[gov.agent_id]["new_deaths"] = new_deaths
+        # LOI DA SUA (v0.24, phat hien khi noi reward moi cho Economy): "new_deaths" TRUOC DAY
+        # CHI duoc ghi vao deltas[gov.agent_id], KHONG BAO GIO ghi vao deltas[eco.agent_id] --
+        # trong khi Economy.calculate_reward() doc dung tu transition_result CUA CHINH NO
+        # (deltas[eco.agent_id]), nen "dead_worker_penalty" cu (them rieng de phat Economy day
+        # gia gay chet nguoi) da LUON LUON = 0, chua tung thuc su hoat dong. Sua: ghi ca vao day.
+        deltas[eco.agent_id]["new_deaths"] = new_deaths
+        deltas[eco.agent_id]["active_population_for_reward"] = len(active_employees)
 
         # 9. GINI HIỆU CHỈNH CHO TÀI SẢN ÂM (Raffinetti et al., 2015) & GDP
         # Tài sản dùng để tính Gini = tiền mặt + tiền gửi ngân hàng (tổng của cải

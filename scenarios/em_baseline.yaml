@@ -28,6 +28,7 @@ min_reproduction_wealth_mult: 3.0
 trait_mutation_sigma: 0.05
 hard_min_emp: 30
 hard_max_emp: 200
+hard_max_firms: 7
 
 initial_lending_rate: 0.12   # IMF Financial Access Survey 2023
 initial_deposit_rate: 0.05   # World Bank Global Financial Development Database 2023
@@ -47,3 +48,6 @@ reward_scale_supervisor: 0.012
 reward_scale_economy: 0.02
 reward_clip: 100.0
 subsistence_indexation_ceiling_mult: 3.0
+initial_living_cost: 6.0
+initial_employment_rate: 0.90
+mrpl_scale_constant: 0.38

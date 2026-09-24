@@ -53,6 +53,12 @@ def parse_args():
     parser.add_argument("--trait-mutation-sigma", type=float, default=0.05, help="Do lech chuan dot bien gen khi sinh san")
     parser.add_argument("--hard-min-emp", type=int, default=30, help="San dan so kich hoat luoi an sinh khan cap")
     parser.add_argument("--hard-max-emp", type=int, default=200, help="Tran dan so cho phep")
+    parser.add_argument("--hard-max-firms", type=int, default=7, help="Tran so luong firm dong thoi cho phep")
+    parser.add_argument("--firm-entry-probability", type=float, default=0.15, help="Xac suat gia nhap nganh moi buoc khi du dieu kien (loi nhuan + du lao dong)")
+    parser.add_argument("--firm-entry-unemployment-threshold", type=float, default=0.08, help="Nguong ty le that nghiep kich hoat dieu kien 'co du thua lao dong' cho gia nhap nganh")
+    parser.add_argument("--firm-entry-profitability-margin", type=float, default=0.0, help="Ha nguong loi nhuan/von can de gia nhap nganh xuong duoi avg_deposit_rate (0=hanh vi cu, procyclical)")
+    parser.add_argument("--mortality-rate-floor", type=int, default=30, help="San mau so ty le tu vong/sinh cua Economy")
+    parser.add_argument("--initial-economy-buffer-fund", type=float, default=10000.0, help="Von mo quy binh on du tru dem cua Economy")
     parser.add_argument("--initial-lending-rate", type=float, default=0.06, help="Lai suat cho vay khoi tao (annual)")
     parser.add_argument("--initial-deposit-rate", type=float, default=0.02, help="Lai suat tien gui khoi tao (annual)")
     parser.add_argument("--gini-penalty-coef", type=float, default=25.0, help="He so phat Gini^2 trong reward Government")
@@ -109,6 +115,12 @@ def resolve_scenario_config(args) -> ScenarioConfig:
         trait_mutation_sigma=args.trait_mutation_sigma,
         hard_min_emp=args.hard_min_emp,
         hard_max_emp=args.hard_max_emp,
+        hard_max_firms=args.hard_max_firms,
+        firm_entry_probability=args.firm_entry_probability,
+        firm_entry_unemployment_threshold=args.firm_entry_unemployment_threshold,
+        firm_entry_profitability_margin=args.firm_entry_profitability_margin,
+        mortality_rate_floor=args.mortality_rate_floor,
+        initial_economy_buffer_fund=args.initial_economy_buffer_fund,
         initial_lending_rate=args.initial_lending_rate,
         initial_deposit_rate=args.initial_deposit_rate,
         gini_penalty_coef=args.gini_penalty_coef,

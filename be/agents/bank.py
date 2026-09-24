@@ -50,7 +50,27 @@ class Bank(BaseAgent):
         self.total_deposits: float = 0.0
         self.total_loans: float = 0.0
         self.non_performing_loans: float = 0.0
-        
+
+        # NO CUU TRO KHAN CAP (bailout debt) -- Bagehot, W. (1873), "Lombard
+        # Street: A Description of the Money Market", Henry S. King & Co.
+        # -- hoc thuyet kinh dien "lend freely, at a high rate, against good
+        # collateral": nguoi cho vay cuoi cung (Kho bac, xem env.py::step()
+        # nhanh "Lender of Last Resort") KHONG duoc cuu tro MIEN PHI, neu
+        # khong se trung hoa hoan toan dong co quan tri rui ro cua Bank (moral
+        # hazard) -- BAN VA DAU TIEN (v0.20) tai cap von thang, KHONG co lai
+        # phat, bi phat hien la trich dan sai tinh than Bagehot (chi ap dung
+        # nua ve "lend freely", bo qua nua ve "at a high rate"). Sua: khoan
+        # cuu tro duoc ghi nhan la MOT KHOAN NO thuc su Bank phai tra Kho bac
+        # kem lai suat PHAT (xem bailout_penalty_rate, Section 5B rule_engine.py).
+        self.bailout_debt: float = 0.0
+        # HE SO CAU TRUC TU DO HIEU CHINH: chon RO RANG cao hon tran
+        # lending_rate hop le [0.01, 0.25]/nam (bien do action space Bank o
+        # rllib_wrapper.py) de dung tinh than "high rate" cua Bagehot (lai
+        # phat phai cao hon lai suat thi truong thong thuong, khong the vay
+        # duoc muc nay tu bat ky nguon nao khac) -- khong suy ra ty le cu the
+        # tu chinh Bagehot (1873).
+        self.bailout_penalty_rate: float = 0.40
+
         # Chinh sach lai suat va an toan von.
         # QUY UOC: lending_rate/deposit_rate la LAI SUAT NAM (annual, simple/
         # linear), KHONG PHAI lai suat thang. rule_engine.py luon chia cho 12.0
@@ -83,6 +103,7 @@ class Bank(BaseAgent):
         self.total_loans = 0.0
         self.non_performing_loans = 0.0
         self.npl_vintages = []
+        self.bailout_debt = 0.0
         self.lending_rate = float(initial_lending_rate)
         self.deposit_rate = float(initial_deposit_rate)
         self.reserve_requirement_ratio = float(reserve_requirement_ratio)
@@ -110,7 +131,18 @@ class Bank(BaseAgent):
         inflation = float(macro.get("inflation", 0.0))
         credit_demand = float(macro.get("total_credit_demand", 0.0)) * 0.001
 
-        npl_ratio = (self.non_performing_loans / self.total_loans) if self.total_loans > 0.0 else 0.0
+        # LOI DA SUA (v0.26, phat hien qua audit chu dong theo yeu cau nguoi dung): truoc day
+        # dung truc tiep self.non_performing_loans/self.total_loans -- DUNG CHINH cong thuc
+        # da duoc tai lieu hoa la LOI o dau file nay (compute_npl_ratio_pct docstring: mau so
+        # total_loans don thuan co the gan 0 trong khi non_performing_loans van con "mo" trong
+        # cua so write-off, cho ra ty le >100%). Ham compute_npl_ratio_pct() da SUA dung (mau
+        # so = gross_loans = total_loans + npl) nhung TRUOC DAY chi duoc goi o env.py/logger.py/
+        # rllib_wrapper.py de HIEN THI -- rieng observe() (anh huong truc tiep obs space RLlib
+        # nhin thay) van dung cong thuc CU chua sua, chi duoc "che" trieu chung bang np.clip(0,1)
+        # ben duoi (bao hoa ve 1.0 dung luc quan trong nhat -- Bank khong con phan biet duoc
+        # "NPL gap doi du no" voi "NPL gap 100 lan du no", ca hai deu clip ve 1.0). Sua: dung lai
+        # dung mot ham compute_npl_ratio_pct() da co san, chia 100 de ve thang [0,1].
+        npl_ratio = compute_npl_ratio_pct(self.non_performing_loans, self.total_loans) / 100.0
         reserve_ratio = (self.reserves / self.total_deposits) if self.total_deposits > 0.0 else 1.0
 
         obs_array = np.array([
@@ -235,6 +267,12 @@ class Bank(BaseAgent):
         self.last_interest_income = float(delta.get("interest_income", 0.0))
         self.last_interest_expense = float(delta.get("interest_expense", 0.0))
 
+        # No cuu tro (bailout_debt) -- xem chu thich day du tai __init__ va
+        # rule_engine.py Section 5B. "bailout_debt_delta" duong khi vua duoc
+        # cuu tro (env.py::step()), am khi tra bot goc (rule_engine.py Section
+        # 5B, cung nhip voi Firm Section 5).
+        self.bailout_debt = float(max(0.0, self.bailout_debt + delta.get("bailout_debt_delta", 0.0)))
+
         # Cap nhat tham so thuc thi
         self.lending_rate = float(delta.get("executed_lending_rate", self.lending_rate))
         self.deposit_rate = float(delta.get("executed_deposit_rate", self.deposit_rate))
@@ -266,7 +304,14 @@ class Bank(BaseAgent):
         net_interest_margin = (self.last_interest_income - self.last_interest_expense) * 0.01
         npl_flow_penalty = self.last_default_loss * self.npl_flow_penalty_coef
 
-        npl_ratio = self.non_performing_loans / max(self.total_loans, 1.0)
+        # LOI DA SUA (v0.26): cung loi nhu observe() o tren -- cong thuc CU
+        # "non_performing_loans / max(total_loans, 1.0)" la DUNG CHINH cong thuc da duoc tai
+        # lieu hoa la loi o docstring compute_npl_ratio_pct() dau file (co the vuot 100% khi
+        # total_loans gan 0 nhung con NPL "mo" trong cua so write-off) -- truoc day chi duoc
+        # sua cho ham hien thi, KHONG duoc ap dung o day noi no truc tiep anh huong gradient
+        # PPO qua npl_stock_penalty. Kich ban de kich hoat nhat: firm pha san hang loat lam
+        # total_loans sup nhanh hon toc do write-off 6 thang cua NPL (npl_writeoff_months).
+        npl_ratio = compute_npl_ratio_pct(self.non_performing_loans, self.total_loans) / 100.0
         npl_stock_penalty = npl_ratio * self.npl_stock_penalty_coef
 
         # Phat neu du tru thuc te thap hon ty le bat buoc
@@ -290,7 +335,8 @@ class Bank(BaseAgent):
             "non_performing_loans": self.non_performing_loans,
             "lending_rate": self.lending_rate,
             "deposit_rate": self.deposit_rate,
-            "last_nim": self.last_interest_income - self.last_interest_expense
+            "last_nim": self.last_interest_income - self.last_interest_expense,
+            "bailout_debt": round(self.bailout_debt, 1)
         }
 
     def reset(self) -> None:
@@ -298,6 +344,7 @@ class Bank(BaseAgent):
         self.reserves = 0.0
         self.total_deposits = 0.0
         self.total_loans = 0.0
+        self.bailout_debt = 0.0
         self.non_performing_loans = 0.0
         self.npl_vintages = []
         self.lending_rate = 0.06

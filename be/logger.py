@@ -129,6 +129,13 @@ class InstitutionalLogger:
                 "month": timestep,
                 "agent_id": emp.agent_id,
                 "status": emp.status.name,
+                # HE SO CAU TRUC TU DO HIEU CHINH (bo sung nhan con thieu, v0.20, phat hien
+                # qua audit toan du an): 18.0 CHI phuc vu HIEN THI/LOG (uoc luong thu nhap
+                # phi chinh thuc cho ca nhan chua co viec lam chinh thuc de nguoi doc log de
+                # hinh dung ty le so voi luong chinh thuc) -- KHONG duoc dung trong reward
+                # hay bat ky cong thuc kinh te nao trong rule_engine.py (khu vuc phi chinh
+                # thuc that su dung "0.35 * skill_level" o rule_engine.py Section 3, khong
+                # phai gia tri nay).
                 "income": float(emp.wage if emp.employed_by else (emp.last_work_effort * emp.skill_level * 18.0)),
                 "living_cost_paid": float(emp.last_consumption),
                 "tax_declare_ratio": float(emp.last_declare_ratio),

@@ -66,9 +66,12 @@ def _random_actions(agent_ids, rng, std):
 def _total_system_value(env: MacroEnvironment) -> float:
     emp = [a for a in env.agents.values() if isinstance(a, Employee)]
     firm = [a for a in env.agents.values() if isinstance(a, Firm)]
+    # + eco.strategic_reserve_fund (v0.24, quy binh on du tru dem cua Economy) -- xem chu thich
+    # day du trong ham cung ten tai test_sfc_accounting.py.
     return (env.gov.treasury + sum(b.reserves for b in env.banks)
             + sum(a.cash for a in firm) + sum(a.cash for a in emp)
-            + sum(getattr(a, "bank_deposit", 0.0) for a in emp))
+            + sum(getattr(a, "bank_deposit", 0.0) for a in emp)
+            + getattr(env.eco, "strategic_reserve_fund", 0.0))
 
 
 @pytest.mark.parametrize("num_banks", [1, 2])
@@ -77,10 +80,12 @@ def _total_system_value(env: MacroEnvironment) -> float:
 def test_sfc_conservation_random_policy(seed: int, std: float, num_banks: int) -> None:
     env = MacroEnvironment(num_employees=40, num_firms=5, num_banks=num_banks, max_steps=STEPS)
     bad_debt = [0.0]
-    env.event_bus.subscribe(
-        EventType.AGENT_BANKRUPT,
-        lambda ev: bad_debt.__setitem__(0, bad_debt[0] + float(ev.payload.get("bad_debt", 0.0))),
-    )
+    _accumulate_bad_debt = lambda ev: bad_debt.__setitem__(0, bad_debt[0] + float(ev.payload.get("bad_debt", 0.0)))
+    # AGENT_BANKRUPT (Firm, Merton Section 8) + AGENT_DIED (Employee chet con no tin dung
+    # tieu dung, Section 3B/9, v0.23 -- khong tai san the chap, mat trang 100%) -- ca hai
+    # cung la kenh "DefaultedDebt" duoc phep trong dang thuc bao toan SFC.
+    env.event_bus.subscribe(EventType.AGENT_BANKRUPT, _accumulate_bad_debt)
+    env.event_bus.subscribe(EventType.AGENT_DIED, _accumulate_bad_debt)
     env.reset(seed=seed)
     rng = np.random.default_rng(seed)
     prev = _total_system_value(env)
@@ -94,14 +99,14 @@ def test_sfc_conservation_random_policy(seed: int, std: float, num_banks: int) -
         assert abs(unexplained) <= SFC_TOLERANCE, (
             f"[seed={seed} std={std} banks={num_banks} step={step}] SFC VIOLATED: "
             f"unexplained_leak={unexplained:.6f} (fines={env.gov.last_fines_collected:.3f}, "
-            f"injection={env.eco.last_demand_injection_value:.3f})"
+            f"injection={env.gov.last_demand_injection_value:.3f})"
         )
-        saw_injection |= abs(env.eco.last_demand_injection_value) > 1e-9
+        saw_injection |= abs(env.gov.last_demand_injection_value) > 1e-9
         saw_fines |= env.gov.last_fines_collected > 1e-9
         saw_purchase |= env.gov.last_purchase > 1e-9
         prev = new
 
     # Bao dam test THUC SU kich hoat hai kenh da tung lam bo test cu mu (khong pass vi vo hieu).
-    assert saw_injection, "Test khong bao gio kich hoat bom/rut cau (Economy action[0] != 0)"
+    assert saw_injection, "Test khong bao gio kich hoat bom/rut cau (Government action[3] != 0)"
     assert saw_fines, "Test khong bao gio sinh tien phat (kenh trot thue/thanh tra khong duoc kiem)"
     assert saw_purchase, "Test khong bao gio kich hoat chi mua hang cua Chinh phu (Section 4C)"

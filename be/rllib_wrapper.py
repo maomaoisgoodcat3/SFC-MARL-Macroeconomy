@@ -25,7 +25,9 @@ ECONOMY_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
 # ==============================================================================
 # KHONG GIAN HANH DONG (ACTION SPACES)
 # ==============================================================================
-EMPLOYEE_ACT_SPACE = Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32)
+# [3]: borrow_intensity [0,1] -- tin dung tieu dung khong the chap MOI (v0.23), xem
+# rule_engine.py Section 3B + employee.py::decide(). Bien do [0,1] khop voi 3 chieu con lai.
+EMPLOYEE_ACT_SPACE = Box(low=0.0, high=1.0, shape=(4,), dtype=np.float32)
 FIRM_ACT_SPACE = Box(
     low=np.array([-1.0, 0.0, 0.0], dtype=np.float32),
     high=np.array([1.0, 1.0, 1.0], dtype=np.float32),
@@ -36,8 +38,11 @@ GOVERNMENT_ACT_SPACE = Box(
     # (rule_engine.py Section 4C; Godley & Lavoie, 2007, mo hinh SIM). DA DOI tu [0, 0.4]
     # ("subsidy_budget_ratio" cu, hanh dong CHET). PHAI khop chinh xac bien trong
     # Government.validate_action(), neu khong policy bi RLlib gioi han sai khoang.
-    low=np.array([0.0, 0.0, 0.0], dtype=np.float32),
-    high=np.array([0.5, 0.5, 1.0], dtype=np.float32),
+    # [3]: demand_injection_ratio [-0.20, 0.20] -- CHUYEN TU Economy sang day (v0.22, xem
+    # KNOWN_PATHOLOGIES.md + government.py::decide()) sau audit tinh mach lac kinh te tong
+    # the: 2 tac tu doc lap cung chi mot ngan sach vi pham nguyen tac hai tang (CLAUDE.md).
+    low=np.array([0.0, 0.0, 0.0, -0.20], dtype=np.float32),
+    high=np.array([0.5, 0.5, 1.0, 0.20], dtype=np.float32),
     dtype=np.float32
 )
 BANK_ACT_SPACE = Box(
@@ -51,14 +56,14 @@ SUPERVISOR_ACT_SPACE = Box(
     dtype=np.float32
 )
 ECONOMY_ACT_SPACE = Box(
-    # [0]: demand_injection_ratio [-0.20, 0.20] -- Blanchard & Perotti (2002),
-    # xem rule_engine.py Section 4B / economy.py validate_action(). ĐÃ ĐỔI từ
-    # [0.90, 1.10] ("living_cost_factor" cũ, action chết -- xem CLAUDE.md).
-    # PHẢI khớp CHÍNH XÁC biên trong Economy.validate_action(), nếu không
-    # policy sẽ bị RLlib giới hạn sai khoảng rồi bị validate_action kẹp cứng
-    # về 1 giá trị duy nhất, vô hiệu hóa hoàn toàn khả năng điều khiển 2 chiều.
-    low=np.array([-0.20, 0.90, 0.0], dtype=np.float32),
-    high=np.array([0.20, 1.10, 10.0], dtype=np.float32),
+    # [0]: intervention_intensity [-1.0, 1.0] -- bình ổn thị trường bằng dự trữ đệm
+    # (Buffer-Stock, Newbery & Stiglitz 1981; xem rule_engine.py Section 4D +
+    # METHODOLOGY_NOTES.md mục 2). MỚI (v0.24) -- TRƯỚC là demand_injection_ratio (đã chuyển
+    # sang Government action[3] ở v0.22), rồi "reserved" no-op (v0.22-v0.23, khi Economy hoàn
+    # toàn mất đòn bẩy ảnh hưởng đến chính reward của nó -- xem CLAUDE.md).
+    # [1]/[2]: housing price/supply factor -- vẫn placeholder no-op như từ đầu, chờ housing epic.
+    low=np.array([-1.0, 0.90, 0.0], dtype=np.float32),
+    high=np.array([1.0, 1.10, 10.0], dtype=np.float32),
     dtype=np.float32
 )
 

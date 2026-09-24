@@ -95,7 +95,17 @@ class ParquetIO:
             return pd.DataFrame()
 
         try:
-            dataset = pq.ParquetDataset(target_dir, use_legacy_dataset=False)
+            # LOI DA SUA (v0.20, xem KNOWN_PATHOLOGIES.md muc moi): tham so
+            # use_legacy_dataset da bi pyarrow LOAI BO HOAN TOAN tu ban >= 15 (API
+            # "non-legacy" -- ban duy nhat con lai -- gio la mac dinh duy nhat, tu
+            # ban than tham so nay khong con y nghia gi de truyen). Da xac minh
+            # trong dung conda env `gpt_eco` cua may nay (pyarrow==25.0.1): goi
+            # ParquetDataset(target_dir, use_legacy_dataset=False) nem thang
+            # TypeError, bi nuot boi except Exception ben duoi va am tham tra ve
+            # DataFrame() RONG (chi log ERROR) -- rui ro mat du lieu nghien cuu am
+            # tham neu ai do dung ham nay de gop nhieu run phan tich (dung muc
+            # dich ghi trong docstring class) ma khong de y log loi.
+            dataset = pq.ParquetDataset(target_dir)
             table = dataset.read()
             return table.to_pandas()
         except Exception as exc:

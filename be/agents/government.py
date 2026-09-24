@@ -22,6 +22,10 @@ class Government(BaseAgent):
         # (Truoc day la subsidy_budget_ratio -- mot hanh dong CHET, chi duoc luu khong duoc dung.)
         self.purchase_ratio: float = 1.0
         self.last_purchase: float = 0.0
+        # Cuong do bom/rut cau tai khoa phan chu ky (rule_engine.py Section 4B) --
+        # chuyen tu Economy sang day o v0.22, xem docstring day du tai decide().
+        self.demand_injection_ratio: float = 0.0
+        self.last_demand_injection_value: float = 0.0
 
         # Kho bac va No cong
         self.treasury: float = 0.0
@@ -57,6 +61,8 @@ class Government(BaseAgent):
         self.tax_rate_firm = float(initial_firm_tax)
         self.purchase_ratio = 1.0
         self.last_purchase = 0.0
+        self.demand_injection_ratio = 0.0
+        self.last_demand_injection_value = 0.0
         self.public_debt = 0.0
         self.current_gdp = float(initial_treasury)
         self.last_gdp = float(initial_treasury)
@@ -110,16 +116,25 @@ class Government(BaseAgent):
 
     def decide(self, observation: Observation) -> Action:
         """
-        Khong gian hanh dong 3 chieu:
+        Khong gian hanh dong 4 chieu:
         [0]: Muc tieu Thue suat Thu nhap Ca nhan (Worker Tax Rate): [0.0, 0.5]
         [1]: Muc tieu Thue suat Doanh nghiep (Firm Tax Rate): [0.0, 0.5]
         [2]: Ty le thu thue+phat ky truoc dung de CHI MUA HANG (Purchase Ratio rho): [0.0, 1.0]
+        [3]: Cuong do bom/rut CAU tai khoa phan chu ky (Demand Injection Ratio): [-0.20, 0.20]
+             -- CHUYEN TU Economy SANG day (v0.22, xem KNOWN_PATHOLOGIES.md muc moi + CLAUDE.md
+             "Quyet dinh thiet ke da can nhac"). Ly do: day la MOT trong hai co che chi tieu tai
+             khoa cua CUNG mot Kho bac (kenh con lai la [2] o tren) -- truoc day do MOT tac tu
+             KHAC (Economy, tu nhan la "Market Maker") quyet dinh doc lap, vi pham truc tiep
+             nguyen tac hai tang cua AI Economist (Zheng et al., 2022) da ghi trong CLAUDE.md
+             ("chi Government moi mang trach nhiem phuc loi xa hoi qua chinh sach"). Xem
+             rule_engine.py Section 4B.
         """
         if "injected_action" in observation.metadata:
             raw_action = observation.metadata["injected_action"]
         else:
-            # Chinh sach tai khoa can bang mac dinh (rho = 1: chi mua hang bang dung so thu ky truoc)
-            raw_action = np.array([0.15, 0.20, 1.0], dtype=np.float32)
+            # Chinh sach tai khoa can bang mac dinh (rho = 1: chi mua hang bang dung so thu ky
+            # truoc; demand_injection_ratio = 0: khong bom/rut them)
+            raw_action = np.array([0.15, 0.20, 1.0, 0.0], dtype=np.float32)
 
         return Action(
             agent_id=self.agent_id,
@@ -129,23 +144,29 @@ class Government(BaseAgent):
 
     def validate_action(self, action: Action) -> ValidationResult:
         vals = action.values
-        if len(vals) < 3:
+        if len(vals) < 4:
             return ValidationResult(
                 is_valid=False,
-                sanitized_values=np.array([0.15, 0.20, 1.0], dtype=np.float32),
-                reason="Action vector must have 3 elements"
+                sanitized_values=np.array([0.15, 0.20, 1.0, 0.0], dtype=np.float32),
+                reason="Action vector must have 4 elements"
             )
 
         # Gioi han muc thue phu hop hien phap, khong cho phep ap dat thue qua cao triet tieu san xuat
         worker_tax = float(np.clip(vals[0], 0.0, 0.50))
         firm_tax = float(np.clip(vals[1], 0.0, 0.50))
-        
+
         # rho <= 1: chi mua hang khong vuot qua so thu ky truoc (ngan sach can bang la TRAN; muon
         # them thau chi phai la mot quyet dinh thiet ke rieng). Tran theo so du Kho bac duoc ap
         # tai rule_engine.py Section 4C nen khong can kep them o day.
         purchase_ratio = float(np.clip(vals[2], 0.0, 1.0))
 
-        sanitized = np.array([worker_tax, firm_tax, purchase_ratio], dtype=np.float32)
+        # He so cau truc TU DO HIEU CHINH: bien do bom/rut cau toi da +-20% tong cau sinh ton co
+        # so cua dan so dang hoat dong (xem rule_engine.py Section 4B) -- KHONG suy ra truc tiep
+        # tu Blanchard & Perotti (2002), chi xac lap huong tac dong; gia tri +-20% giu nguyen tu
+        # ban thiet ke o Economy truoc khi chuyen sang day (v0.22).
+        demand_injection_ratio = float(np.clip(vals[3], -0.20, 0.20))
+
+        sanitized = np.array([worker_tax, firm_tax, purchase_ratio, demand_injection_ratio], dtype=np.float32)
         return ValidationResult(is_valid=True, sanitized_values=sanitized)
 
     def apply_result(self, transition_result: TransitionResult) -> None:
@@ -167,12 +188,15 @@ class Government(BaseAgent):
         # Cap nhat dong tien ngan sach thuc te
         tax_revenue = float(delta.get("tax_collected", 0.0))
         subsidies_spent = float(delta.get("subsidies_disbursed", 0.0))
-        # Chi phi bom/rut cau tai khoa phan chu ky do Economy quyet dinh cuong
-        # do (rule_engine.py Section 4B; Blanchard & Perotti, 2002) -- duong
-        # (bom them cau) tru vao Kho bac giong mot khoan chi tieu chinh phu G,
-        # am (rut bot cau) lam Kho bac TANG (chinh phu thu ve suc mua da rut
-        # khoi thi truong). Dam bao dang thuc SFC: phan cau Firm/khu vuc phi
-        # chinh thuc nhan them/bot PHAI co nguon doi ung dung o day.
+        # Chi phi bom/rut cau tai khoa phan chu ky do CHINH Government quyet
+        # dinh cuong do qua action[3] (rule_engine.py Section 4B; Blanchard &
+        # Perotti, 2002) -- chuyen tu Economy sang day o v0.22 (xem
+        # KNOWN_PATHOLOGIES.md, dung nguyen tac hai tang cua AI Economist:
+        # chi Government moi mang trach nhiem phuc loi xa hoi qua chinh sach).
+        # Duong (bom them cau) tru vao Kho bac giong mot khoan chi tieu chinh
+        # phu G, am (rut bot cau) lam Kho bac TANG (chinh phu thu ve suc mua
+        # da rut khoi thi truong). Dam bao dang thuc SFC: phan cau Firm/khu
+        # vuc phi chinh thuc nhan them/bot PHAI co nguon doi ung dung o day.
         demand_injection_cost = float(delta.get("demand_injection_cost", 0.0))
         # Tien phat trot thue do Supervisor thanh tra (rule_engine.py Section 7,
         # Allingham & Sandmo, 1972: kiem toan + phat la co che rang buoc hanh vi
@@ -191,17 +215,29 @@ class Government(BaseAgent):
         government_purchase_cost = float(delta.get("government_purchase_cost", 0.0))
         self.last_purchase = government_purchase_cost
 
+        # No cuu tro Bank tra ve (goc + lai phat) -- Bagehot (1873), "at a high
+        # rate" (xem rule_engine.py Section 5B, env.py::step() nhanh "NGUOI CHO
+        # VAY CUOI CUNG"). Cung nguyen ly SFC nhu fines_collected o tren: tien
+        # da chi ra luc bailout PHAI co duong quay lai tuong ming, khong duoc
+        # coi la mat trang vinh vien.
+        bailout_repayment = float(delta.get("bailout_repayment", 0.0))
+
         self.last_tax_collected = tax_revenue
         self.last_fines_collected = fines_collected
         self.last_subsidies_paid = subsidies_spent
 
-        net_budget = tax_revenue + fines_collected - subsidies_spent - demand_injection_cost - government_purchase_cost
+        net_budget = tax_revenue + fines_collected + bailout_repayment - subsidies_spent - demand_injection_cost - government_purchase_cost
         self.treasury += net_budget
         
         if self.treasury < 0.0:
             self.public_debt += abs(self.treasury)
             self.treasury = 0.0
         elif self.public_debt > 0.0 and self.treasury > 0.0:
+            # HE SO CAU TRUC TU DO HIEU CHINH (bo sung nhan con thieu, v0.20, phat hien
+            # qua audit toan du an): 0.5 chi xac dinh TOC DO tra no cong moi buoc (tra
+            # toi da 50% ngan sach thang du) -- khong suy ra truc tiep tu trich dan hoc
+            # thuat nao, chi la lua chon can bang giua tra no nhanh (on dinh tai khoa)
+            # va giu du du tru chi tieu (G, tro cap) cho buoc ke tiep.
             repayment = min(self.treasury * 0.5, self.public_debt)
             self.public_debt -= repayment
             self.treasury -= repayment
@@ -210,6 +246,8 @@ class Government(BaseAgent):
         self.tax_rate_worker = float(delta.get("executed_worker_tax", self.tax_rate_worker))
         self.tax_rate_firm = float(delta.get("executed_firm_tax", self.tax_rate_firm))
         self.purchase_ratio = float(delta.get("executed_purchase_ratio", self.purchase_ratio))
+        self.demand_injection_ratio = float(delta.get("demand_injection_ratio", self.demand_injection_ratio))
+        self.last_demand_injection_value = float(delta.get("demand_injection_effect", 0.0))
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         """
@@ -278,6 +316,8 @@ class Government(BaseAgent):
             "current_real_gdp": self.current_real_gdp,
             "purchase_ratio": self.purchase_ratio,
             "last_purchase": self.last_purchase,
+            "demand_injection_ratio": round(self.demand_injection_ratio, 4),
+            "last_demand_injection_value": round(self.last_demand_injection_value, 1),
             "current_gini": self.current_gini,
             "dead_citizens_count": self.dead_citizens_count
         }
@@ -288,6 +328,8 @@ class Government(BaseAgent):
         self.tax_rate_firm = 0.20
         self.purchase_ratio = 1.0
         self.last_purchase = 0.0
+        self.demand_injection_ratio = 0.0
+        self.last_demand_injection_value = 0.0
         self.current_real_gdp = 0.0
         self.last_real_gdp = 0.0
         self.treasury = 0.0

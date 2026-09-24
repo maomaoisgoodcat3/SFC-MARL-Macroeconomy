@@ -59,10 +59,14 @@ function describeEvent(e) {
             const parentTxt = p.parent_id ? `, thừa kế từ ${String(p.parent_id).toUpperCase()}` : '';
             return `${tgt} gia nhập xã hội (vốn mồi $${p.cash}, kỹ năng ${skillTxt}${parentTxt})`;
         }
-        case 'AGENT_DIED': return `${src} qua đời lúc ${p.age} tuổi [${p.reason ?? 'không rõ lý do'}]. Di sản thu về Kho bạc`;
+        case 'AGENT_DIED': {
+            const debtTxt = (typeof p.bad_debt === 'number' && p.bad_debt > 0) ? `, để lại nợ xấu $${p.bad_debt.toFixed(1)}` : '';
+            return `${src} qua đời lúc ${p.age} tuổi [${p.reason ?? 'không rõ lý do'}]. Di sản thu về Kho bạc${debtTxt}`;
+        }
         case 'AGENT_BANKRUPT': {
             const recovered = p.recovered !== undefined ? ` (thu hồi $${p.recovered})` : '';
-            return `${src} giải thể — ${tgt || 'ngân hàng'} ghi nhận nợ xấu $${p.bad_debt}${recovered}`;
+            const badDebtTxt = typeof p.bad_debt === 'number' ? p.bad_debt.toFixed(1) : p.bad_debt;
+            return `${src} giải thể — ${tgt || 'ngân hàng'} ghi nhận nợ xấu $${badDebtTxt}${recovered}`;
         }
         case 'POLICY_SHOCK': return `Can thiệp chính sách: Thuế CN ${p.worker_tax}%, Thuế DN ${p.firm_tax}%, Lãi suất ${p.lending_rate}%, Sàn sống $${p.living_cost}`;
         default: return `${src} → ${tgt} | ${JSON.stringify(p)}`;

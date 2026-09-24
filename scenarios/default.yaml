@@ -31,6 +31,7 @@ min_reproduction_wealth_mult: 3.0   # so thang chi phi song can du tich luy ("su
 trait_mutation_sigma: 0.05          # do lech chuan dot bien Gaussian quanh dac diem di truyen
 hard_min_emp: 30                    # san dan so -- kich hoat luoi an sinh khan cap (bien phap ky thuat, KHONG phai mo phong nhan khau hoc that)
 hard_max_emp: 200                   # tran dan so cho phep
+hard_max_firms: 7                   # tran so luong firm dong thoi cho phep
 
 # --- Ngan hang: lai suat khoi tao (QUY UOC annual/nam -- rule_engine.py chia
 # cho 12.0 truoc khi ap dung theo thang, xem bank.py) ---
@@ -67,3 +68,10 @@ reward_clip: 100.0                  # env TU CHOI cau hinh nho hon hinh phat tu 
 # Boi so cua initial_living_cost. Tren tran, he so khuech dai vong lap gia ve dung theta=0,70
 # (Calvo, 1983) => cat phan ky kieu Cagan (1956); duoi tran giu nguyen Stone-Geary (Stone, 1954).
 subsistence_indexation_ceiling_mult: 3.0
+
+# --- Dieu kien khoi tao (env.py reset(), v0.17) ---
+initial_living_cost: 6.0
+initial_employment_rate: 0.90
+
+# --- He so hieu chinh quy mo MRPL/san luong (rule_engine.py Section 2/3, v0.19) ---
+mrpl_scale_constant: 0.38
