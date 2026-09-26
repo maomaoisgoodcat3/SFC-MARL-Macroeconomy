@@ -115,7 +115,7 @@ class Bank(BaseAgent):
 
     def observe(self, raw_environment_state: Dict[str, Any]) -> Observation:
         """
-        Khong gian quan sat 10 chieu:
+        Khong gian quan sat 11 chieu:
         [0]: Luong tien mat du tru tai ngan hang (Reserves scaled)
         [1]: Tong quy tien gui cua toan bo nen kinh te (Deposits scaled)
         [2]: Tong du no tin dung dang luu hanh (Loans scaled)
@@ -126,6 +126,16 @@ class Bank(BaseAgent):
         [7]: Lai suat tien gui hien tai
         [8]: Ty le lam phat thi truong
         [9]: Cau vay von cua Doanh nghiep toan thi truong
+        [10]: No cuu tro (bailout_debt) con lai, scaled -- MOI (v0.28, phat hien qua audit
+              chu dong theo yeu cau nguoi dung 2026-09-25). LOI DA SUA: bailout_debt duoc them
+              tu v0.20/v0.21 (Bagehot 1873, xem __init__), duoc cap nhat dung trong apply_result()
+              va xuat ra export_state() cho frontend, nhung CHUA BAO GIO duoc dua vao observe()
+              -- policy Bank khong "nhin thay" duoc no dang no cuu tro bao nhieu, khong the hoc
+              cach uu tien tra no/dieu chinh chien luoc lai suat theo ganh nang no. Khong phai
+              loi an toan (rule_engine.py da kep gia tri bailout_debt_delta an toan doc lap voi
+              observation) -- day la loi HIEU QUA HOC (policy "mu" mot phan trang thai tai chinh
+              cua chinh no), thuoc loai "them state moi nhung quen cap nhat observation" -- CUNG
+              MAU LOI voi Economy.strategic_reserve_fund/stock (xem economy.py, sua cung dot).
         """
         macro = raw_environment_state.get("macro_indicators", {})
         inflation = float(macro.get("inflation", 0.0))
@@ -155,7 +165,8 @@ class Bank(BaseAgent):
             self.lending_rate,
             self.deposit_rate,
             inflation,
-            credit_demand
+            credit_demand,
+            self.bailout_debt * 0.0001,
         ], dtype=np.float32)
 
         return Observation(

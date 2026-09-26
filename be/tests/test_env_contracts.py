@@ -374,6 +374,104 @@ def test_wage_ratchet_converges_near_ceiling_with_mrpl_scale_fix() -> None:
 
 
 # ==============================================================================
+# DAM PHAN LAI LUONG CALVO-STYLE (v0.28, Taylor 1980; Erceg, Henderson & Levin 2000)
+# -- xem KNOWN_PATHOLOGIES.md muc wage-mrpl-ratchet
+# ==============================================================================
+@pytest.mark.parametrize("wage_renegotiation_prob", [0.0, 0.12, 0.30])
+def test_wage_renegotiation_does_not_open_single_step_price_loop(wage_renegotiation_prob: float) -> None:
+    """AN TOAN VONG LAP (pham vi MOT BUOC): dam phan lai luong khong duoc lam gain d(P_t)/d(P_{t-1})
+    tren tran chi so hoa vuot qua THETA_CALVO da chap nhan, o BAT KY xac suat dam phan nao. Dung
+    dung phuong phap nhieu +2% tren 2 ban sao cua test_price_indexation_loop_gain_equals_theta_above_ceiling.
+
+    LUU Y PHAM VI: phep do MOT BUOC nay ve mat cau truc KHONG di qua kenh dam phan luong -- luong
+    doi trong buoc t chi anh huong chi tieu/gia tu buoc t+2 tro di (qua instant_clearing_price cua
+    buoc SAU), khong phai P_{t+1} da duoc tinh xong trong chinh buoc t. Vi vay gain==theta CHINH XAC
+    o ca 3 muc prob la ket qua ĐÚNG DU KIEN theo timing cua model, khong phai trung hop. Kenh phan
+    hoi NHIEU BUOC (luong -> chi tieu -> gia qua vai buoc) duoc kiem tra rieng boi
+    test_wage_renegotiation_reduces_ratchet_on_price_reversal ben duoi (quy dao 40 buoc, khong chi
+    "khong no", ma phai co gan bo ro voi gia)."""
+    env = MacroEnvironment(num_employees=50, num_firms=5, num_banks=1, max_steps=100,
+                            wage_renegotiation_prob=wage_renegotiation_prob)
+    env.reset(seed=11)
+    rng = np.random.default_rng(11)
+    for _ in range(8):
+        env.step(_actions(list(env.agents.keys()), rng))
+    ceiling = env.subsistence_indexation_ceiling_mult * env.eco.initial_living_cost
+    env.eco.base_living_cost = 1.5 * ceiling
+    acts = _actions(list(env.agents.keys()), np.random.default_rng(1011))
+    acts["eco_1"] = np.array([0.0, 1.0, 1.0], dtype=np.float32)
+    a_env, b_env = copy.deepcopy(env), copy.deepcopy(env)
+    p0 = a_env.eco.base_living_cost
+    b_env.eco.base_living_cost = p0 * 1.02
+    np.random.seed(77); a_env.step(dict(acts))
+    np.random.seed(77); b_env.step(dict(acts))
+    gain = (b_env.eco.base_living_cost - a_env.eco.base_living_cost) / (p0 * 1.02 - p0)
+    assert gain < 1.0, f"prob={wage_renegotiation_prob}: vong lap phan ky (gain={gain:.3f})"
+    assert abs(gain - THETA_CALVO) < 0.02, f"prob={wage_renegotiation_prob}: gain={gain:.3f} khac theta={THETA_CALVO}"
+
+
+def _wage_trajectory_rise_fall(wage_renegotiation_prob, seed, steps=40, hire_bias=0.6, force_turnover=3):
+    """Nhu _wage_trajectory nhung gia TANG (20 buoc dau, 2.0->25.0) ROI GIAM (20 buoc sau,
+    25.0->4.0) -- kich ban _wage_trajectory (chi tang lien tuc) khong the dung de kiem "un-ratchet",
+    vi hanh vi coc luong CHINH la luong khong theo gia XUONG. Tra ve (dinh luong trong 20 buoc dau,
+    luong trung binh 5 buoc cuoi khi gia da giam sau)."""
+    env = MacroEnvironment(num_employees=50, num_firms=6, num_banks=1, max_steps=steps + 5,
+                            mrpl_scale_constant=0.38, wage_renegotiation_prob=wage_renegotiation_prob)
+    obs, _ = env.reset(seed=seed)
+    rng = np.random.default_rng(seed)
+    price_path = np.concatenate([np.geomspace(2.0, 25.0, 20), np.geomspace(25.0, 4.0, 20)])
+    wage_history = []
+    for t in range(steps):
+        env.eco.base_living_cost = float(price_path[t])
+        employed_now = [x for x in env.agents.values() if x.agent_id.startswith("emp_") and x.employed_by]
+        for e in (list(np.random.choice(employed_now, size=min(force_turnover, len(employed_now)), replace=False))
+                  if employed_now else []):
+            f = env.agents.get(e.employed_by)
+            if f is not None and e.agent_id in f.employee_ids:
+                f.employee_ids.remove(e.agent_id)
+            e.employed_by = None
+        acts = _actions(list(env.agents.keys()), rng)
+        for aid in acts:
+            if aid.startswith("firm_"):
+                acts[aid][0] = hire_bias
+        obs, *_ = env.step(acts)
+        emps_now = [x for x in env.agents.values() if x.agent_id.startswith("emp_") and x.employed_by]
+        wage_history.append(np.mean([e.wage for e in emps_now]) if emps_now else 0.0)
+    peak = max(wage_history[:20])
+    tail = np.mean(wage_history[-5:])
+    return peak, tail
+
+
+def test_wage_renegotiation_reduces_ratchet_on_price_reversal() -> None:
+    """LOI THAT (KNOWN_PATHOLOGIES.md muc wage-mrpl-ratchet): truoc v0.28, luong CHI duoc dinh khi
+    tuyen moi -- nhan vien DANG lam khong bao gio duoc dam phan lai, nen khi gia giam sau khi da
+    tung tang (dung boi canh khung hoang -> phuc hoi quan sat that trong training log), luong trung
+    binh KHONG giam theo, tiep tuc "coc" cao hon ca dinh gia. Do TRUC TIEP (khong doan) bang quy dao
+    40 buoc: 20 buoc gia TANG (2.0->25.0) roi 20 buoc gia GIAM (25.0->4.0), luan chuyen lao dong that
+    (ep sa thai ngau nhien moi buoc de co ung vien moi/cu di qua dung dam phan).
+
+    KET QUA THUC NGHIEM (4 seed 77-80, script _scratch_verify_wage_renegotiation.py, 2026-09-25):
+    prob=0.0 (khoa vinh vien, hanh vi CU) -> luong cuoi = 132% DINH (luong con TANG dù gia da giam
+    manh -- dung trieu chung coc luong). prob=0.12 (mac dinh moi) -> 67.3% dinh. prob=0.25 -> 46.5%
+    dinh. Quan he don dieu ro rang: prob cang cao, un-ratchet cang manh -- dung nhu ly thuyet du bao,
+    khong phai nhieu ngau nhien. Test khoa lai bang so sanh TRUC TIEP prob=0.12 (ScenarioConfig mac
+    dinh) voi prob=0.0 (tai hien DUNG hanh vi CU qua field wage_renegotiation_prob theo quy dinh
+    CLAUDE.md)."""
+    seeds = (77, 78, 79, 80)
+    old = [_wage_trajectory_rise_fall(0.0, s) for s in seeds]
+    new = [_wage_trajectory_rise_fall(0.12, s) for s in seeds]
+    peak_old, tail_old = np.mean([x[0] for x in old]), np.mean([x[1] for x in old])
+    peak_new, tail_new = np.mean([x[0] for x in new]), np.mean([x[1] for x in new])
+    ratio_old, ratio_new = tail_old / peak_old, tail_new / peak_new
+    assert ratio_old > 1.0, (
+        f"hanh vi CU (prob=0.0) khong con trieu chung coc luong ro (ty le cuoi/dinh={ratio_old:.2f} <= 1.0) "
+        f"-- co the co fix khac da vo tinh thay doi hanh vi tai hien, kiem tra lai KNOWN_PATHOLOGIES.md")
+    assert ratio_new < 0.85 * ratio_old, (
+        f"prob=0.12 (moi) khong giam ro ratchet so voi prob=0.0 (cu): ty le cuoi/dinh moi={ratio_new:.2f} "
+        f"khong < 85% ty le cu={ratio_old:.2f} -- co che dam phan lai co the da bi vo hieu hoa")
+
+
+# ==============================================================================
 # DONG BO TRANG THAI CHET/PHA SAN (v0.20) -- xem KNOWN_PATHOLOGIES.md muc moi
 # ==============================================================================
 def test_firm_bankruptcy_via_rule_engine_is_not_a_zombie() -> None:

@@ -31,7 +31,7 @@ min_reproduction_wealth_mult: 3.0   # so thang chi phi song can du tich luy ("su
 trait_mutation_sigma: 0.05          # do lech chuan dot bien Gaussian quanh dac diem di truyen
 hard_min_emp: 30                    # san dan so -- kich hoat luoi an sinh khan cap (bien phap ky thuat, KHONG phai mo phong nhan khau hoc that)
 hard_max_emp: 200                   # tran dan so cho phep
-hard_max_firms: 7                   # tran so luong firm dong thoi cho phep
+hard_max_firms: 25                  # tran so luong firm dong thoi cho phep (v0.29: 7->25, xem KNOWN_PATHOLOGIES.md muc #21)
 
 # --- Ngan hang: lai suat khoi tao (QUY UOC annual/nam -- rule_engine.py chia
 # cho 12.0 truoc khi ap dung theo thang, xem bank.py) ---

@@ -15,12 +15,12 @@ from be.agents.bank import compute_npl_ratio_pct
 # ==============================================================================
 # KHONG GIAN QUAN SAT (OBSERVATION SPACES)
 # ==============================================================================
-EMPLOYEE_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32)  # +1: bank_deposit (Section 8B)
-FIRM_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float32)
+EMPLOYEE_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(15,), dtype=np.float32)  # +2: risk_aversion, tax_morale (v0.28)
+FIRM_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32)  # +2: risk_aversion, tax_morale (v0.28)
 GOVERNMENT_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
-BANK_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
+BANK_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float32)  # +1: bailout_debt (v0.28, xem bank.py)
 SUPERVISOR_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(8,), dtype=np.float32)
-ECONOMY_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
+ECONOMY_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float32)  # +2: strategic_reserve_fund/stock (v0.28, xem economy.py)
 
 # ==============================================================================
 # KHONG GIAN HANH DONG (ACTION SPACES)

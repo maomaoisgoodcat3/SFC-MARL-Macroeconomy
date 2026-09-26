@@ -57,6 +57,7 @@ def parse_args():
     parser.add_argument("--firm-entry-probability", type=float, default=0.15, help="Xac suat gia nhap nganh moi buoc khi du dieu kien (loi nhuan + du lao dong)")
     parser.add_argument("--firm-entry-unemployment-threshold", type=float, default=0.08, help="Nguong ty le that nghiep kich hoat dieu kien 'co du thua lao dong' cho gia nhap nganh")
     parser.add_argument("--firm-entry-profitability-margin", type=float, default=0.0, help="Ha nguong loi nhuan/von can de gia nhap nganh xuong duoi avg_deposit_rate (0=hanh vi cu, procyclical)")
+    parser.add_argument("--wage-renegotiation-prob", type=float, default=0.12, help="Xac suat Calvo-style dam phan lai luong moi buoc cho lao dong da co viec (0=hanh vi cu, luong khoa vinh vien -- xem KNOWN_PATHOLOGIES.md wage-mrpl-ratchet)")
     parser.add_argument("--mortality-rate-floor", type=int, default=30, help="San mau so ty le tu vong/sinh cua Economy")
     parser.add_argument("--initial-economy-buffer-fund", type=float, default=10000.0, help="Von mo quy binh on du tru dem cua Economy")
     parser.add_argument("--initial-lending-rate", type=float, default=0.06, help="Lai suat cho vay khoi tao (annual)")
@@ -119,6 +120,7 @@ def resolve_scenario_config(args) -> ScenarioConfig:
         firm_entry_probability=args.firm_entry_probability,
         firm_entry_unemployment_threshold=args.firm_entry_unemployment_threshold,
         firm_entry_profitability_margin=args.firm_entry_profitability_margin,
+        wage_renegotiation_prob=args.wage_renegotiation_prob,
         mortality_rate_floor=args.mortality_rate_floor,
         initial_economy_buffer_fund=args.initial_economy_buffer_fund,
         initial_lending_rate=args.initial_lending_rate,

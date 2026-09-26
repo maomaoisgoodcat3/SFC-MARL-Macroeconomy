@@ -68,6 +68,7 @@ class MacroEnvironment:
                  initial_living_cost: float = 6.0,
                  initial_employment_rate: float = 0.90,
                  mrpl_scale_constant: float = 0.38,
+                 wage_renegotiation_prob: float = 0.12,
                  hard_max_firms: int = 7,
                  firm_entry_probability: float = 0.15,
                  firm_entry_unemployment_threshold: float = 0.08,
@@ -201,12 +202,17 @@ class MacroEnvironment:
         # dieu kien can bang wage/price); dat = 1.0 de tai hien logic CU (lech chuan dinh co,
         # xem KNOWN_PATHOLOGIES.md muc #8).
         self.mrpl_scale_constant: float = float(mrpl_scale_constant)
+        # Xac suat dam phan lai luong Calvo-style (v0.28) -- xem chu thich day du tai
+        # RuleEngine.__init__/Section 3 (be/rule_engine.py). =0.0 tai tao dung hanh vi CU
+        # (luong khoa vinh vien mot khi tuyen, nguon goc "coc luong").
+        self.wage_renegotiation_prob: float = float(wage_renegotiation_prob)
 
         self.event_bus: EventBus = EventBus()
         self.rule_engine: RuleEngine = RuleEngine(
             event_bus=self.event_bus,
             subsistence_indexation_ceiling_mult=self.subsistence_indexation_ceiling_mult,
             mrpl_scale_constant=self.mrpl_scale_constant,
+            wage_renegotiation_prob=self.wage_renegotiation_prob,
         )
         self.agents: Dict[str, BaseAgent] = {}
         self.banks: List[Bank] = []

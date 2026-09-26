@@ -50,9 +50,20 @@ class Firm(BaseAgent):
 
     def observe(self, raw_environment_state: Dict[str, Any]) -> Observation:
         """
-        Khong gian quan sat 11 chieu:
+        Khong gian quan sat 13 chieu:
         [0-3] Vi mo: Thue TNDN, Lai suat cho vay cua Bank, Luong trung binh thi truong, He so cau thi truong
         [4-10] Vi mo noi tai: Tien mat, Von dau tu, No phai tra, So nhan vien, Doanh thu gan nhat, Loi nhuan gan nhat, Nang suat
+        [11] risk_aversion, [12] tax_morale -- MOI (v0.28)
+
+        LOI DA SUA cho [11]/[12] (phat hien qua audit chu dong theo yeu cau nguoi
+        dung 2026-09-25, cung dot voi employee.py): risk_aversion anh huong that
+        risk_discount khi vay von (Kimball 1990, rule_engine.py Section 5) va
+        tax_morale anh huong truc tiep moral_cost trong calculate_reward() ben
+        duoi -- CA HAI di bien theo tung Firm (khoi tao ngau nhien, xem
+        env.py::_create_world/gia nhap nganh Section B) nhung CHUA BAO GIO duoc
+        dua vao observe(). Vi Firm cung dung PARAMETER SHARING nhu Employee, mang
+        chung khong the ca the hoa hanh vi vay no/khai bao thue theo dung dac diem
+        rieng cua tung firm neu khong quan sat duoc 2 truong nay.
         """
         macro = raw_environment_state.get("macro_indicators", {})
         corp_tax = float(macro.get("firm_tax_rate", 0.2))
@@ -71,7 +82,9 @@ class Firm(BaseAgent):
             float(len(self.employee_ids)),
             self.last_revenue,
             self.last_profit,
-            self.productivity_factor
+            self.productivity_factor,
+            self.risk_aversion,
+            self.tax_morale,
         ], dtype=np.float32)
 
         return Observation(

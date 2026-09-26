@@ -13,6 +13,15 @@
 # LUU Y: day chi la GIA TRI KHOI TAO (Bank van tu do hoc dieu chinh lai suat
 # qua RL trong pham vi action space [1%-25%] lending / [0.5%-15%] deposit da
 # co san o rllib_wrapper.py -- khong doi bien do action space).
+#
+# CALIBRATION BASELINE CHINH THUC (v0.29, 2026-09-25, xem KNOWN_PATHOLOGIES.md muc #21 +
+# CLAUDE_HISTORY.md): 3 field duoi day ghi TUONG MINH (khong phu thuoc ngam vao default class
+# ScenarioConfig) dung ket qua chuoi 6 nhanh ablation "hieu ung so luong firm + coc luong" --
+# hard_max_firms=25 + firm_entry_profitability_margin=0.08 (nhanh "loose_entry_v2", tot nhat ve
+# NPL/Gini so voi tran 7 cu procyclical) + wage_renegotiation_prob=0.12 (nhanh on dinh nhat trong
+# 2 muc wage-reneg da thu, tu phuc hoi hoan toan trong 40 iteration, xem muc #24). Day la lua chon
+# CO DANH DOI da biet (NPL tot hon, Gini kem hon so voi khong bat wage-reneg), khong phai "toi uu
+# tuyet doi" -- dang cho xac nhan dai han (>40 iteration) truoc khi coi la ket luan chinh thuc.
 # ==============================================================================
 
 num_employees: 50
@@ -28,7 +37,9 @@ min_reproduction_wealth_mult: 3.0
 trait_mutation_sigma: 0.05
 hard_min_emp: 30
 hard_max_emp: 200
-hard_max_firms: 7
+hard_max_firms: 25
+firm_entry_profitability_margin: 0.08
+wage_renegotiation_prob: 0.12
 
 initial_lending_rate: 0.12   # IMF Financial Access Survey 2023
 initial_deposit_rate: 0.05   # World Bank Global Financial Development Database 2023

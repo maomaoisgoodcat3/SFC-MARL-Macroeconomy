@@ -20,6 +20,7 @@ class EventType(Enum):
     HIRE = "HIRE"
     FIRE = "FIRE"
     WAGE_PAID = "WAGE_PAID"
+    WAGE_RENEGOTIATED = "WAGE_RENEGOTIATED"  # v0.28, xem rule_engine.py Section 3 (Taylor 1980/Erceg-Henderson-Levin 2000)
     GOODS_PURCHASED = "GOODS_PURCHASED"
     TAX_COLLECTED = "TAX_COLLECTED"
     TAX_EVADED = "TAX_EVADED"

@@ -51,15 +51,23 @@ class ScenarioConfig:
     # ScenarioConfig de nhat quan voi hard_min_emp/hard_max_emp o tren -- phat hien qua
     # audit toan du an). Jorgenson (1963)/Bain (1956) chi xac lap DIEU KIEN gia nhap nganh
     # (loi nhuan vuot chi phi von + du lao dong), KHONG cho gioi han so luong firm toi da.
-    hard_max_firms: int = 7                     # tran so luong firm dong thoi cho phep
+    # MAC DINH DOI (v0.29, 2026-09-25): 7 -> 25, theo ket qua ablation "loose_entry_v2"
+    # (KNOWN_PATHOLOGIES.md muc #21) -- tran 7 cu la rang buoc bo chat gay hieu ung phan chu ky
+    # tu than (procyclical entry barrier), da do thuc nghiem 6 nhanh ablation khac nhau. Dat
+    # hard_max_firms=7 de tai hien DUNG hanh vi CU (tran chat, chua sua).
+    hard_max_firms: int = 25                     # tran so luong firm dong thoi cho phep
 
     # Co cau gia nhap nganh (v0.26, chuyen tu hardcode cuc bo trong env.py::step() Section B
     # sang ScenarioConfig -- phuc vu ablation tach bach "so luong firm" khoi "co che gia nhap",
     # phat hien qua thao luan voi nguoi dung + Claude Web 2026-09-24, xem KNOWN_PATHOLOGIES.md
-    # va METHODOLOGY_NOTES.md). Ca 3 gia tri mac dinh KHOP DUNG hanh vi hardcode CU.
+    # va METHODOLOGY_NOTES.md).
     firm_entry_probability: float = 0.15         # xac suat gia nhap MOI BUOC khi du dieu kien
     firm_entry_unemployment_threshold: float = 0.08  # nguong that nghiep kich hoat "du lao dong"
-    firm_entry_profitability_margin: float = 0.0     # ha nguong loi nhuan can de gia nhap (0=CU, procyclical)
+    # MAC DINH DOI (v0.29, 2026-09-25): 0.0 -> 0.08, cung ket qua ablation "loose_entry_v2" o tren
+    # (chi phat huy tac dung KHI hard_max_firms du cao -- 2 field nay phai doi CUNG NHAU, xem
+    # KNOWN_PATHOLOGIES.md muc #21 "nhanh thu 2" cho bai hoc confound khi chi doi mot trong hai).
+    # Dat =0.0 de tai hien DUNG hanh vi CU (procyclical, khong noi long dieu kien gia nhap).
+    firm_entry_profitability_margin: float = 0.08    # ha nguong loi nhuan can de gia nhap
 
     # --- Economy "an sinh vi mo" + binh on thi truong bang du tru dem (v0.24, xem
     # METHODOLOGY_NOTES.md muc 1-3) ---
@@ -103,6 +111,12 @@ class ScenarioConfig:
 
     # --- He so hieu chinh quy mo MRPL/san luong (rule_engine.py Section 2/3, v0.19) ---
     mrpl_scale_constant: float = 0.38         # giai dai so tu dieu kien can bang wage/price; dat 1.0 de tai hien lech chuan dinh co CU (xem KNOWN_PATHOLOGIES.md muc #8)
+
+    # --- Dam phan lai luong Calvo-style (rule_engine.py Section 3, v0.28 -- Taylor 1980;
+    # Erceg, Henderson & Levin 2000) -- sua tan goc "coc luong" (KNOWN_PATHOLOGIES.md muc
+    # wage-mrpl-ratchet): luong lao dong DA co viec gio co the duoc dam phan lai dinh ky thay vi
+    # khoa vinh vien. =0.0 tai hien DUNG hanh vi CU (khoa vinh vien).
+    wage_renegotiation_prob: float = 0.12
 
     @classmethod
     def from_yaml(cls, path: str) -> "ScenarioConfig":

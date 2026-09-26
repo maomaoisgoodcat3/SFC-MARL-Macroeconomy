@@ -96,7 +96,7 @@ class Economy(BaseAgent):
 
     def observe(self, raw_environment_state: Dict[str, Any]) -> Observation:
         """
-        Khong gian quan sat 9 chieu:
+        Khong gian quan sat 11 chieu:
         [0]: Chi phi sinh hoat co so hien tai
         [1]: Gia nha trung binh thi truong (scaled)
         [2]: Ton kho quy nha o (Housing Inventory)
@@ -106,6 +106,17 @@ class Economy(BaseAgent):
         [6]: Tong cau tieu dung xa hoi (scaled)
         [7]: Tong cung lao dong / san pham (scaled)
         [8]: Do lech lam phat so voi muc tieu 2%
+        [9]: Quy du tru dem (strategic_reserve_fund, tien) con lai, scaled -- MOI (v0.28)
+        [10]: Ton kho du tru dem (strategic_reserve_stock, hang hoa) con lai, scaled -- MOI (v0.28)
+
+        LOI DA SUA cho [9]/[10] (phat hien qua audit chu dong theo yeu cau nguoi dung
+        2026-09-25): strategic_reserve_fund/stock duoc them tu v0.24 (buffer-stock, xem __init__),
+        duoc cap nhat dung trong apply_result() va xuat ra export_state(), nhung CHUA BAO GIO
+        duoc dua vao observe() -- policy Economy quyet dinh mua/ban (action[0]) ma KHONG biet
+        chinh no con bao nhieu von/hang de can thiep. Khong phai loi an toan (rule_engine.py Section
+        4D da kep buffer_buy_spend/buffer_sell_qty theo dung fund/stock con lai, xem
+        test_economy_buffer_stock_never_exceeds_balance_sheet_constraints) -- day la loi HIEU
+        QUA HOC, CUNG MAU voi Bank.bailout_debt (xem bank.py, sua cung dot).
         """
         macro = raw_environment_state.get("macro_indicators", {})
         aggregate_demand = float(macro.get("aggregate_demand", 0.0)) * 0.001
@@ -122,7 +133,9 @@ class Economy(BaseAgent):
             self.step_trade_volume * 0.0005,
             aggregate_demand,
             aggregate_supply,
-            inflation_gap
+            inflation_gap,
+            self.strategic_reserve_fund * 0.0001,
+            self.strategic_reserve_stock * 0.01,
         ], dtype=np.float32)
 
         return Observation(

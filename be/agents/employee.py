@@ -94,9 +94,24 @@ class Employee(BaseAgent):
         interest_rate = float(macro.get("base_interest_rate", 0.05))
         unemployment_rate = float(macro.get("unemployment_rate", 0.0))
         
-        # Khong gian quan sat 13 chieu: [0-4] vi mo, [5] tien mat, [6] tien gui
+        # Khong gian quan sat 15 chieu: [0-4] vi mo, [5] tien mat, [6] tien gui
         # ngan hang (Section 8B, rule_engine.py), [7] the luc, [8] bac ky nang,
-        # [9] luong, [10] dang co viec lam, [11] tuoi, [12] no.
+        # [9] luong, [10] dang co viec lam, [11] tuoi, [12] no, [13] risk_aversion,
+        # [14] tax_morale.
+        #
+        # LOI DA SUA cho [13]/[14] (v0.28, phat hien qua audit chu dong theo yeu
+        # cau nguoi dung 2026-09-25): risk_aversion anh huong that toi rule_engine.py
+        # (risk_discount cho vay tieu dung, deposit_buffer_target -- Kimball 1990, xem
+        # Section 3B/8B) va tax_morale anh huong truc tiep toi calculate_reward() ben
+        # duoi (moral_cost) -- CA HAI deu di bien theo tung Employee (khoi tao ngau
+        # nhien, di truyen + dot bien qua sinh san, env.py Section A) nhung CHUA BAO
+        # GIO duoc dua vao observe(). Vi Employee dung PARAMETER SHARING (MOT mang
+        # neural network duy nhat cho moi Employee), mang KHONG THE phan biet dang
+        # dieu khien ca the co tax_morale/risk_aversion cao hay thap de toi uu rieng
+        # hanh vi khai bao thue/vay no/tieu dung cho tung loai -- buoc phai hoc mot
+        # chien luoc trung binh chung, mat kha nang ca the hoa dung ban chat thiet ke
+        # "heterogeneous agents" cua mo hinh. Khong dua vao them scale rieng (ca hai
+        # da nam san trong [0,1], cung bac do lon voi cac chieu quan sat khac).
         obs_array = np.array([
             inflation,
             living_cost,
@@ -110,7 +125,9 @@ class Employee(BaseAgent):
             self.wage,
             1.0 if self.employed_by is not None else 0.0,
             float(self.age),
-            self.debt
+            self.debt,
+            self.risk_aversion,
+            self.tax_morale,
         ], dtype=np.float32)
 
         return Observation(

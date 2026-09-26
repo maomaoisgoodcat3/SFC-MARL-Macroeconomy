@@ -81,8 +81,12 @@ class RuleEngine:
     số cụ thể. Đây là thông lệ chuẩn trong hiệu chỉnh mô hình kinh tế tính toán.
     """
     def __init__(self, event_bus: EventBus, subsistence_indexation_ceiling_mult: float = 3.0,
-                 mrpl_scale_constant: float = 0.38):
+                 mrpl_scale_constant: float = 0.38, wage_renegotiation_prob: float = 0.12):
         self.event_bus: EventBus = event_bus
+        # Xac suat dam phan lai luong Calvo-style moi buoc cho lao dong DA co viec (Taylor 1980;
+        # Erceg, Henderson & Levin 2000) -- xem chu thich day du tai Section 3 (noi su dung).
+        # =0.0 tai tao dung hanh vi CU (luong khoa vinh vien mot khi tuyen).
+        self.wage_renegotiation_prob: float = float(wage_renegotiation_prob)
         # Tran chi so hoa chi tieu sinh ton theo gia (boi so cua eco.initial_living_cost);
         # HE SO HIEU CHINH on dinh so hoc, xem chu thich tai Section 4.
         self.subsistence_indexation_ceiling_mult: float = float(subsistence_indexation_ceiling_mult)
@@ -374,7 +378,7 @@ class RuleEngine:
 
         for firm in active_firms:
             firm_workers = [
-                e for e in active_employees 
+                e for e in active_employees
                 if (e.employed_by == firm.agent_id or e.agent_id in deltas[firm.agent_id].get("hired_employees", []))
                 and e.agent_id not in deltas[firm.agent_id].get("fired_employees", [])
             ]
@@ -383,6 +387,14 @@ class RuleEngine:
             overhead = depreciation_rate * firm.capital_stock * 0.01
             firm_overheads[firm.agent_id] = overhead
 
+            # Lao dong hieu dung HIEN TAI cua firm (chi theo skill, KHONG nhan effort -- dung
+            # DUNG cach tinh current_effective_labor cua Section 2 o tren, de cong thuc MRPL
+            # dung cho DAM PHAN LAI LUONG duoi day nhat quan voi cong thuc dung cho tuyen moi).
+            # Dung cho nguoi LAO DONG DA CO SAN (khong phai "+candidate" nhu Section 2, vi ho
+            # DA nam trong tong nay roi).
+            firm_current_effective_labor = sum(getattr(w, 'skill_level', 1.0) for w in firm_workers)
+            hired_this_step_ids = set(deltas[firm.agent_id].get("hired_employees", []))
+
             wage_bill = 0.0
             effective_l = 0.0
 
@@ -390,6 +402,59 @@ class RuleEngine:
                 emp_act = validated_actions.get(emp.agent_id)
                 effort = float(emp_act.values[0]) if emp_act is not None else 0.6
                 assigned_wage = deltas[emp.agent_id].get("wage", emp.wage)
+
+                # DAM PHAN LAI LUONG DINH KY (Wage Renegotiation) -- MOI (v0.28). Nguyen nhan
+                # goc cua "coc luong" (xem test_wage_ratchet_converges_near_ceiling_with_mrpl_scale_fix,
+                # KNOWN_PATHOLOGIES.md): luong nguoi lao dong DANG co viec KHONG BAO GIO duoc
+                # dam phan lai (dong "wage = assigned_wage if assigned_wage > 0" ben duoi) --
+                # mot khi tuyen luc gia cao, luong "khoa" MAI MAI o muc do, ke ca khi dieu kien
+                # thi truong/nang suat firm sau nay giam xuong. Day la co che MOT CHIEU (chi tang
+                # qua tuyen moi, khong bao gio giam), khac voi thi truong lao dong that co CA hai
+                # chieu du don gian hoa qua "hop dong so le" (staggered contracts).
+                #
+                # Mo rong DUNG khung Calvo (1983) da dung cho GIA HANG HOA (xem indexed_price/
+                # THETA_CALVO o Section 4) sang TIEN LUONG: Taylor, J. B. (1980), "Aggregate
+                # Dynamics and Staggered Contracts", Journal of Political Economy 88(1), 1-23 --
+                # hop dong luong so le, moi ky chi MOT PHAN NGAU NHIEN hop dong duoc dam phan lai,
+                # khong phai toan bo cung luc. Ap dung TRUC TIEP cho macro/DSGE: Erceg, C. J.,
+                # Henderson, D. W., & Levin, A. T. (2000), "Optimal Monetary Policy with Staggered
+                # Wage and Price Contracts", Journal of Monetary Economics 46(2), 281-313 -- day
+                # la nguon THAM CHIEU CHINH cho viec mo rong CO CHE Calvo-staggered TU gia hang
+                # hoa SANG tien luong (khong phai bia moi, cung mot khung ly thuyet, khac doi
+                # tuong ap dung).
+                #
+                # self.wage_renegotiation_prob (HE SO CAU TRUC TU DO HIEU CHINH, mac dinh 0.12 --
+                # tuong duong thoi han hop dong trung binh ~1/0.12~8.3 thang, gan voi chu ky xem
+                # xet luong hang nam pho bien trong thuc te, THAP HON xac suat renegotiate GIA
+                # hang hoa (1-THETA_CALVO=0.30/buoc) de giu dung dac tinh "luong cung hon gia"
+                # (real wage rigidity) da duoc chinh du an dung lam co so thiet ke o Section 2,
+                # Blanchard & Katz 1997) -- KHONG suy ra tu Erceg-Henderson-Levin truc tiep (ho
+                # uoc luong rieng cho kinh te My, khong ap dung duoc cho don vi tien te cua mo
+                # hinh nay). wage_renegotiation_prob=0.0 tai tao DUNG hanh vi CU (khoa luong vinh
+                # vien) -- xem ScenarioConfig.
+                #
+                # CHI ap dung cho lao dong DA CO SAN (khong phai vua tuyen buoc nay -- ho da nhan
+                # dung negotiated_wage moi nhat tu Section 2 roi, dam phan lai ngay lap tuc la
+                # thua). Renegotiate CHI doi LUONG, KHONG anh huong quyet dinh sa thai/tiep tuc
+                # lam viec (quyet dinh do thuoc rieng Section 2, tranh xung dot/dem trung).
+                if (assigned_wage > 0.0 and emp.agent_id not in hired_this_step_ids
+                        and self.wage_renegotiation_prob > 0.0
+                        and np.random.rand() < self.wage_renegotiation_prob):
+                    reneg_marginal_product = (
+                        self.mrpl_scale_constant *
+                        BETA_LABOR * firm.productivity_factor *
+                        (firm.capital_stock ** ALPHA_CAPITAL) *
+                        (max(0.5, firm_current_effective_labor) ** (BETA_LABOR - 1.0)) *
+                        getattr(emp, 'skill_level', 1.0)
+                    )
+                    reneg_mrpl = indexed_price * reneg_marginal_product
+                    reneg_reservation_wage = max(indexed_price * 1.02, indexed_price * (0.8 + 0.3 * getattr(emp, 'skill_level', 1.0)))
+                    assigned_wage = max(indexed_price, 0.5 * reneg_reservation_wage + 0.5 * reneg_mrpl)
+                    deltas[emp.agent_id]["wage"] = assigned_wage
+                    self._emit_event(EventType.WAGE_RENEGOTIATED, firm.agent_id, emp.agent_id,
+                                      {"new_wage": round(assigned_wage, 1)}, timestep)
+                    events_map[emp.agent_id].append(EventType.WAGE_RENEGOTIATED.value)
+
                 # Lương mặc định cho lao động MỚI (chưa từng được gán wage) dùng indexed_price
                 # (đã chặn trần), KHÔNG dùng expected_price thô -- nếu không, đây là kênh chỉ số
                 # hoá theo giá thứ hai bỏ sót trần, tái tạo lại đúng vòng lặp phản hồi dương mà
