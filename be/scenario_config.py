@@ -76,6 +76,21 @@ class ScenarioConfig:
     mortality_rate_floor: int = 30
     # Von mo cap MOT LAN tu Treasury cho quy binh on du tru dem cua Economy luc reset.
     initial_economy_buffer_fund: float = 10000.0
+    # Von Kho bac luc reset (v0.35, KNOWN_PATHOLOGIES.md #29c). MAC DINH DOI 1_000_000 -> 25_000: cu = ~1700
+    # buoc GDP danh nghia (GDP ~585/buoc, thue ~75/buoc) nen rang buoc ngan sach KHONG BAO GIO co hieu luc
+    # (Kho bac cuoi episode ~93% von dau) va Government khong phai danh doi giua tro cap/chi tieu/no cong.
+    # 25.000 ~ 43 thang GDP: du cho quy binh on (10.000) + luoi an sinh khan cap, nhung mot chinh sach tro cap
+    # cao trong suy thoai (~120/buoc) CAN kiet trong 1 episode -- HE SO TU DO HIEU CHINH. Dat 1_000_000 de
+    # tai hien logic CU.
+    initial_treasury: float = 25000.0
+    # Kho bac co tai tro von khoi tao (tien mat Firm/Employee luc reset) hay khong. False (mac dinh, DA SUA):
+    # initial_treasury la so du VAN HANH sau khi cap von. True: tai hien logic CU (Kho bac bi tru ~35-65k
+    # von khoi tao; chi hop ly khi initial_treasury du lon, vd. 1_000_000).
+    treasury_funds_initial_endowments: bool = False
+    # Dang reward Government (v0.35, KNOWN_PATHOLOGIES.md #29b): "eq_x_prod" (mac dinh, can voi thuoc do
+    # benchmark: swf_reward_scale * (1-Gini) * GDP thuc - phat tu vong - phat no) hoac "legacy" (dang cu).
+    government_reward_mode: str = "eq_x_prod"
+    swf_reward_scale: float = 0.02              # HE SO CHUAN HOA TU DO HIEU CHINH (dua Eq x Prod ~250 -> ~5/buoc)
 
     # --- Ngan hang: lai suat khoi tao (QUY UOC: annual/nam, xem bank.py) ---
     initial_lending_rate: float = 0.06          # 6%/nam
@@ -87,6 +102,11 @@ class ScenarioConfig:
     npl_flow_penalty_coef: float = 0.06         # Bank.calculate_reward -- phat no xau MOI phat sinh
     npl_stock_penalty_coef: float = 50.0        # Bank.calculate_reward -- phat theo TY LE ton kho NPL/tong du no
     npl_writeoff_months: int = 6                # Bank.apply_result -- so thang no xau duoc "mo" truoc khi write-off (IFRS 9 / Basel NPL staging, xem bank.py)
+    # TIEU CHI VO NO NGAN HANG (v0.33, KNOWN_PATHOLOGIES.md #28): "equity" (mac dinh, DA SUA -- von chu
+    # so huu = reserves + total_loans am qua -failure_floor) hoac "reserves" (tai hien hanh vi CU:
+    # reserves tho < -failure_floor, khong nhin tai san cho vay). Xem Bank.__init__.
+    bank_failure_criterion: str = "equity"
+    bank_failure_floor: float = 100000.0        # nguong dung sai von/reserves am truoc khi tuyen vo no (HE SO TU DO HIEU CHINH)
     emp_death_penalty_base: float = 100.0                 # Employee.calculate_reward -- muc phat tu vong goc (ratio=0, tuc chet dung luc max_age)
     emp_death_penalty_horizon_multiplier: float = 1.0     # Employee.calculate_reward -- he so nhan them theo ty le quang doi con lai (Viscusi & Aldy VSL), xem rule_engine.py Section 9
 
@@ -117,6 +137,30 @@ class ScenarioConfig:
     # wage-mrpl-ratchet): luong lao dong DA co viec gio co the duoc dam phan lai dinh ky thay vi
     # khoa vinh vien. =0.0 tai hien DUNG hanh vi CU (khoa vinh vien).
     wage_renegotiation_prob: float = 0.12
+
+    # --- Ky luat lao dong Shapiro-Stiglitz (rule_engine.py Section 3, v0.34, KNOWN_PATHOLOGIES.md #27) ---
+    # Sua "lo hong khuyen khich effort": truoc day effort chi co CHI PHI ca nhan (disutility) va
+    # khong co LOI ICH ca nhan -> chinh sach hoc effort ~ 0.1 (moral hazard khong duoc kiem soat).
+    # Shapiro & Stiglitz (1984): giam sat ngau nhien + sa thai khi bi phat hien lam luoi.
+    # shirking_monitor_prob=0.0 tai tao DUNG hanh vi CU (khong co giam sat, effort khong co loi ich).
+    shirking_monitor_prob: float = 0.05        # q: xac suat/thang bi giam sat & phat hien neu lam luoi (HE SO TU DO HIEU CHINH)
+    shirking_effort_threshold: float = 0.5     # ebar: effort < nguong = "lam luoi" (HE SO TU DO HIEU CHINH; 0.5 = trung binh policy ngau nhien)
+    effort_signal_noise_sigma: float = 0.10    # do lech chuan nhieu trong tin hieu effort Firm quan sat (Holmstrom 1979; HE SO TU DO HIEU CHINH)
+    # Dau an sa thai vi luoi (Gibbons & Katz 1991): so thang bi loai khoi ung vien MOI firm sau khi bi
+    # sa thai vi luoi. =0 -> tuyen lai ngay (thi truong khong ma sat: sa thai gan nhu vo hai, do
+    # truc tiep: muc giam sat q=0.05 KHONG du de tuan thu thang luoi -- KNOWN_PATHOLOGIES.md #27).
+    # Quy tac tai tro tro cap that nghiep (v0.36, KNOWN_PATHOLOGIES.md #30b): "affordable" (mac dinh, DA SUA --
+    # tong tro cap <= so du Kho bac con lai sau G/bom cau cung buoc, thieu thi chia theo ty le) hoac "legacy_gate"
+    # (tai hien logic CU: chi khi Kho bac > 1000 tuyet doi, khong chan tren -- lam action[4] vo hieu khi Kho bac nho).
+    subsidy_funding_rule: str = "affordable"
+    # Binh on du tru dem cua Economy (v0.37, KNOWN_PATHOLOGIES.md #31): "band_scaled" (mac dinh, DA SUA -- quy mo can
+    # thiep <= kappa x thi truong HIEN TAI + chi mua/ban ngoai dai gia quanh gia tham chieu EMA) hoac "legacy_fixed_anchor"
+    # (tai hien logic CU v0.24: quy mo neo initial_living_cost co dinh x dan so, khong dai gia).
+    buffer_stock_rule: str = "band_scaled"
+    buffer_max_market_share: float = 0.15          # kappa -- HE SO TU DO HIEU CHINH
+    buffer_price_band: float = 0.05                # +-5% quanh gia tham chieu -- HE SO TU DO HIEU CHINH
+    buffer_reference_halflife_months: float = 12.0 # chu ky ban ra EMA gia tham chieu -- HE SO TU DO HIEU CHINH
+    shirker_rehire_lockout_months: int = 9    # HE SO TU DO HIEU CHINH (do truc tiep: L=6 gap khuyen khich=+0.34+-0.36 KHONG co y nghia; L=9 -> +1.91+-0.60; KNOWN_PATHOLOGIES.md #27)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ScenarioConfig":

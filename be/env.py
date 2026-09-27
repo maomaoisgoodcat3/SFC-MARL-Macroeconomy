@@ -58,6 +58,7 @@ class MacroEnvironment:
                  gini_penalty_coef: float = 25.0, death_penalty_coef: float = 20.0,
                  npl_flow_penalty_coef: float = 0.06, npl_stock_penalty_coef: float = 50.0,
                  npl_writeoff_months: int = 6,
+                 bank_failure_criterion: str = "equity", bank_failure_floor: float = 100000.0,
                  emp_death_penalty_base: float = 100.0,
                  emp_death_penalty_horizon_multiplier: float = 1.0,
                  reward_scale_employee: float = 0.045, reward_scale_firm: float = 0.018,
@@ -69,18 +70,50 @@ class MacroEnvironment:
                  initial_employment_rate: float = 0.90,
                  mrpl_scale_constant: float = 0.38,
                  wage_renegotiation_prob: float = 0.12,
+                 shirking_monitor_prob: float = 0.05,
+                 shirking_effort_threshold: float = 0.5,
+                 effort_signal_noise_sigma: float = 0.10,
+                 shirker_rehire_lockout_months: int = 9,
+                 subsidy_funding_rule: str = "affordable",
+                 buffer_stock_rule: str = "band_scaled",
+                 buffer_max_market_share: float = 0.15,
+                 buffer_price_band: float = 0.05,
+                 buffer_reference_halflife_months: float = 12.0,
                  hard_max_firms: int = 7,
                  firm_entry_probability: float = 0.15,
                  firm_entry_unemployment_threshold: float = 0.08,
                  firm_entry_profitability_margin: float = 0.0,
                  mortality_rate_floor: int = 30,
-                 initial_economy_buffer_fund: float = 10000.0):
+                 initial_economy_buffer_fund: float = 10000.0,
+                 initial_treasury: float = 25000.0,
+                 treasury_funds_initial_endowments: bool = False,
+                 government_reward_mode: str = "eq_x_prod",
+                 swf_reward_scale: float = 0.02):
         self.num_employees: int = num_employees
         self.num_firms: int = num_firms
         self.num_banks: int = max(1, num_banks)
         self.max_steps: int = max_steps
         self.timestep: int = 0
         self.births_this_step: int = 0
+        # BO DEM CHAN DOAN (v0.31, chi phuc vu logging -- KHONG anh huong hanh vi mo phong): tong
+        # so ca sinh va so ca sinh tu LUOI AN SINH KHAN CAP (dan so < hard_min_emp, Kho bac tai
+        # tro, khong co cha/me) trong episode hien tai. Audit 2026-09-26 (KNOWN_PATHOLOGIES.md
+        # #29d): metric log train cu chi co births_this_step o BUOC CUOI nen khong phan biet duoc
+        # sinh san noi sinh voi luoi khan cap.
+        self.births_episode: int = 0
+        self.emergency_births_episode: int = 0
+        # BO DEM CHAN DOAN (v0.35-fix1, thuan logging -- KHONG anh huong hanh vi mo phong, cung
+        # mau voi births_episode/emergency_births_episode v0.32): tong tien Kho bac chi qua 3
+        # kenh "NGOAI SO" -- KHONG di qua bat ky truong nao Government.apply_result doc de tinh
+        # net_budget (tax_collected/fines_collected/subsidies_disbursed/government_purchase_cost/
+        # demand_injection_cost) -- nen Government khong "biet" no da chi cac khoan nay qua
+        # observation/reward cua chinh no. Phat hien qua audit + phan bien Claude Web
+        # (2026-09-27, xem KNOWN_PATHOLOGIES.md #29c/FUTURE_WORK.md #9): do tho bang chenh lech
+        # Kho bac (residual) LAN CA 3 khoan nay lam mot, khong tach duoc dong gop rieng cua tung
+        # khoan -- 3 bo dem duoi day tach bach TUNG khoan de do dung truoc khi trich dan so lieu.
+        self.treasury_outflow_newborn_episode: float = 0.0      # an sinh toi thieu (nhanh 2) + luoi khan cap (nhanh 1), env.py Section A
+        self.treasury_outflow_firm_entry_episode: float = 0.0   # von moi khi firm moi gia nhap nganh, env.py Section B
+        self.treasury_outflow_bailout_episode: float = 0.0      # cuu tro ngan hang cuoi cung (Bagehot), env.py step()
 
         # Toan bo tham so ben duoi la HE SO CAU TRUC TU DO HIEU CHINH -- gia
         # tri mac dinh khop DUNG voi gia tri hardcode truoc khi co
@@ -114,6 +147,12 @@ class MacroEnvironment:
         # Von mo cap MOT LAN tu Treasury cho quy binh on du tru dem (buffer-stock) cua Economy
         # luc reset -- xem rule_engine.py Section 4D + METHODOLOGY_NOTES.md muc 2.
         self.initial_economy_buffer_fund: float = float(initial_economy_buffer_fund)
+        # Von Kho bac + dang reward Government (v0.35) -- xem ScenarioConfig/Government.__init__.
+        self.initial_treasury: float = float(initial_treasury)
+        # Kho bac co TRU von khoi tao (tien mat Firm/Employee luc reset) hay khong -- xem chu thich o reset().
+        self.treasury_funds_initial_endowments: bool = bool(treasury_funds_initial_endowments)
+        self.government_reward_mode: str = str(government_reward_mode)
+        self.swf_reward_scale: float = float(swf_reward_scale)
         self.initial_lending_rate: float = float(initial_lending_rate)
         self.initial_deposit_rate: float = float(initial_deposit_rate)
         self.gini_penalty_coef: float = float(gini_penalty_coef)
@@ -121,6 +160,8 @@ class MacroEnvironment:
         self.npl_flow_penalty_coef: float = float(npl_flow_penalty_coef)
         self.npl_stock_penalty_coef: float = float(npl_stock_penalty_coef)
         self.npl_writeoff_months: int = int(npl_writeoff_months)
+        self.bank_failure_criterion: str = str(bank_failure_criterion)
+        self.bank_failure_floor: float = float(bank_failure_floor)
         self.emp_death_penalty_base: float = float(emp_death_penalty_base)
         self.emp_death_penalty_horizon_multiplier: float = float(emp_death_penalty_horizon_multiplier)
 
@@ -206,6 +247,19 @@ class MacroEnvironment:
         # RuleEngine.__init__/Section 3 (be/rule_engine.py). =0.0 tai tao dung hanh vi CU
         # (luong khoa vinh vien mot khi tuyen, nguon goc "coc luong").
         self.wage_renegotiation_prob: float = float(wage_renegotiation_prob)
+        # Ky luat lao dong Shapiro-Stiglitz (v0.34, KNOWN_PATHOLOGIES.md #27) -- xem chu thich day du
+        # tai RuleEngine.__init__/Section 3. shirking_monitor_prob=0.0 tai tao DUNG hanh vi CU.
+        self.shirking_monitor_prob: float = float(shirking_monitor_prob)
+        self.shirking_effort_threshold: float = float(shirking_effort_threshold)
+        self.effort_signal_noise_sigma: float = float(effort_signal_noise_sigma)
+        self.shirker_rehire_lockout_months: int = int(shirker_rehire_lockout_months)
+        # Quy tac tai tro tro cap (v0.36) -- xem RuleEngine.__init__ + KNOWN_PATHOLOGIES.md #30b.
+        self.subsidy_funding_rule: str = str(subsidy_funding_rule)
+        # Binh on du tru dem cua Economy (v0.37) -- xem RuleEngine.__init__/Section 4D + KNOWN_PATHOLOGIES.md #31.
+        self.buffer_stock_rule: str = str(buffer_stock_rule)
+        self.buffer_max_market_share: float = float(buffer_max_market_share)
+        self.buffer_price_band: float = float(buffer_price_band)
+        self.buffer_reference_halflife_months: float = float(buffer_reference_halflife_months)
 
         self.event_bus: EventBus = EventBus()
         self.rule_engine: RuleEngine = RuleEngine(
@@ -213,6 +267,15 @@ class MacroEnvironment:
             subsistence_indexation_ceiling_mult=self.subsistence_indexation_ceiling_mult,
             mrpl_scale_constant=self.mrpl_scale_constant,
             wage_renegotiation_prob=self.wage_renegotiation_prob,
+            shirking_monitor_prob=self.shirking_monitor_prob,
+            shirking_effort_threshold=self.shirking_effort_threshold,
+            effort_signal_noise_sigma=self.effort_signal_noise_sigma,
+            shirker_rehire_lockout_months=self.shirker_rehire_lockout_months,
+            subsidy_funding_rule=self.subsidy_funding_rule,
+            buffer_stock_rule=self.buffer_stock_rule,
+            buffer_max_market_share=self.buffer_max_market_share,
+            buffer_price_band=self.buffer_price_band,
+            buffer_reference_halflife_months=self.buffer_reference_halflife_months,
         )
         self.agents: Dict[str, BaseAgent] = {}
         self.banks: List[Bank] = []
@@ -224,7 +287,8 @@ class MacroEnvironment:
 
     def _create_world(self) -> None:
         self.agents.clear()
-        self.gov = Government(agent_id="gov_1", gini_penalty_coef=self.gini_penalty_coef, death_penalty_coef=self.death_penalty_coef)
+        self.gov = Government(agent_id="gov_1", gini_penalty_coef=self.gini_penalty_coef, death_penalty_coef=self.death_penalty_coef,
+                              reward_mode=self.government_reward_mode, swf_reward_scale=self.swf_reward_scale)
         self.eco = Economy(agent_id="eco_1", mortality_rate_floor=self.mortality_rate_floor)
         self.sup = Supervisor(agent_id="sup_1")
 
@@ -239,7 +303,9 @@ class MacroEnvironment:
                 agent_id=f"bank_{i}",
                 npl_flow_penalty_coef=self.npl_flow_penalty_coef,
                 npl_stock_penalty_coef=self.npl_stock_penalty_coef,
-                npl_writeoff_months=self.npl_writeoff_months
+                npl_writeoff_months=self.npl_writeoff_months,
+                failure_criterion=self.bank_failure_criterion,
+                failure_floor=self.bank_failure_floor
             )
             for i in range(self.num_banks)
         ]
@@ -276,6 +342,11 @@ class MacroEnvironment:
             np.random.seed(seed)
 
         self.timestep = 0
+        self.births_episode = 0
+        self.emergency_births_episode = 0
+        self.treasury_outflow_newborn_episode = 0.0
+        self.treasury_outflow_firm_entry_episode = 0.0
+        self.treasury_outflow_bailout_episode = 0.0
         self.next_emp_id = self.num_employees
         self.next_firm_id = self.num_firms
         self.reported_dead_agents.clear()
@@ -283,7 +354,15 @@ class MacroEnvironment:
         self._create_world()
 
         # KHỞI TẠO THỂ CHẾ VĨ MÔ
-        self.gov.initialize(initial_treasury=1000000.0, initial_worker_tax=0.15, initial_firm_tax=0.20)
+        # initial_treasury (v0.35) = so du Kho bac VAN HANH luc t0, SAU khi da cap von khoi tao. LOI DA SUA:
+        # ban cu (initial_treasury=1_000_000, hardcode) TRU tien mat khoi tao cua moi Firm (3000-5000) va
+        # Employee (200-400) khoi Kho bac -- vo hai khi Kho bac ~1e6, nhung khi ha Kho bac xuong quy mo
+        # ngan sach THAT (25_000) thi tong von khoi tao (~35-65k tuy quy mo dan so) VUOT Kho bac -> Kho bac
+        # AM luc reset, buoc dau bi chuyen thanh no cong (+18k) va pha dang thuc SFC (test bao ro ri 15.758
+        # o buoc 1). Von khoi tao la DIEU KIEN BAN DAU (ton kho tien luc t0), khong phai dong chi cua Kho bac
+        # -- SFC (Godley & Lavoie, 2007) chi rang buoc DONG giua cac buoc, khong rang buoc cach dat ton kho
+        # ban dau. Tai hien logic CU (Kho bac tai tro von khoi tao): treasury_funds_initial_endowments=True.
+        self.gov.initialize(initial_treasury=self.initial_treasury, initial_worker_tax=0.15, initial_firm_tax=0.20)
         self.gov.current_gdp = 0.0
         # Tổng dự trữ hệ thống ngân hàng được CHIA ĐỀU cho N ngân hàng để tổng
         # cung tín dụng ban đầu của toàn hệ thống không phụ thuộc vào num_banks
@@ -317,12 +396,14 @@ class MacroEnvironment:
                 agent.age_months = 0
                 agent.status = LifeCycleStatus.ACTIVE
                 seed_cash = float(np.random.uniform(3000.0, 5000.0))
-                self.gov.treasury -= seed_cash
+                if self.treasury_funds_initial_endowments:
+                    self.gov.treasury -= seed_cash
                 agent.cash = seed_cash
 
             elif isinstance(agent, Employee):
                 start_cash = float(np.random.uniform(200.0, 400.0))
-                self.gov.treasury -= start_cash
+                if self.treasury_funds_initial_endowments:
+                    self.gov.treasury -= start_cash
                 agent.initialize(
                     skill_level=self._sample_skill(),
                     risk_aversion=float(np.random.uniform(0.3, 0.8)),
@@ -371,6 +452,19 @@ class MacroEnvironment:
         for i in order[:remainder]:
             quotas[i] += 1
 
+        # LOI DA SUA (v0.36, KNOWN_PATHOLOGIES.md #30a/#29g): truoc day chi gan employed_by, KHONG gan wage
+        # -> thuoc tinh wage ket o 0.0 cho toi khi bi sa thai + tuyen lai (cong dam phan lai luong o
+        # rule_engine.py Section 3 doi hoi assigned_wage > 0 nen khong bao gio mo; nhanh du phong tra
+        # luong that nhung khong ghi lai thuoc tinh). Hau qua do duoc tren validation_v035: Employee
+        # obs[9] = 0 sai -> policy da hoc chon effort ~0.27 cho nhom nay -> ~45 vu sa thai vi luoi +
+        # that nghiep 21% nhan tao o bac 0-30 cua MOI episode; Firm tinh quy luong = 0 cho nhom nay.
+        # Sua: gan DUNG muc luong mac dinh ma rule_engine.py dang THUC TRA o nhanh du phong cho lao dong
+        # chua co luong (indexed_price * 1.05, indexed_price = min(max(1, gia), tran chi so hoa)) -- khong
+        # dua them cong thuc moi. Loi DUNG/SAI thuan tuy (khong toggle); tai hien: xoa dong gan wage duoi.
+        indexed_price = min(max(1.0, self.eco.base_living_cost),
+                            self.subsistence_indexation_ceiling_mult * self.eco.initial_living_cost)
+        default_wage = indexed_price * 1.05
+
         shuffled = list(active_employees)
         np.random.shuffle(shuffled)
         idx = 0
@@ -381,6 +475,7 @@ class MacroEnvironment:
                 emp = shuffled[idx]
                 idx += 1
                 emp.employed_by = firm.agent_id
+                emp.wage = default_wage
                 firm.employee_ids.append(emp.agent_id)
 
     def observe_agent(self, agent_id: str, raw_state: Optional[Dict[str, Any]] = None) -> np.ndarray:
@@ -398,6 +493,25 @@ class MacroEnvironment:
         if not np.isfinite(r):
             return 0.0
         return float(np.clip(r, -self.reward_clip, self.reward_clip))
+
+    def _debit_deposit_ledger(self, emp: Employee, amount: float) -> None:
+        """Giam so cai tien gui (Bank.total_deposits) cua ngan hang giu tai khoan cua `emp` khi
+        tien gui roi ngan hang NGOAI kenh rule_engine.py Section 8B (chet -> di san ve Kho bac;
+        thua ke cha/me -> con).
+
+        LOI DA SUA (v0.33, KNOWN_PATHOLOGIES.md #28, audit 2026-09-26 test F3): truoc day hai kenh
+        nay lay tien khoi Employee.bank_deposit nhung KHONG tru Bank.total_deposits tuong ung,
+        nen so cai ngan hang phinh dan "tien gui ma" (sum(b.total_deposits) > sum(emp.bank_deposit))
+        -- lam sai yeu cau du tru bat buoc (Bank.validate_action/reward), obs Bank[1]/[5] va
+        macro.bank_deposits. Bao toan SFC (Godley & Lavoie, 2007): moi ben cua mot khoan chuyen
+        phai duoc ghi so o CA HAI phia."""
+        if amount <= 0.0:
+            return
+        depository_id = getattr(emp, "depository_bank_id", None)
+        for b in self.banks:
+            if b.agent_id == depository_id:
+                b.total_deposits = float(max(0.0, b.total_deposits - amount))
+                return
 
     def step(self, action_dict: Dict[str, np.ndarray]) -> Tuple[
         Dict[str, np.ndarray], Dict[str, float], Dict[str, bool], Dict[str, bool], Dict[str, Any]
@@ -504,6 +618,7 @@ class MacroEnvironment:
             # và bank_deposit không hề được xử lý, khiến cả hai chiều đều vi phạm
             # bảo toàn hệ thống.
             self.gov.treasury += emp.cash + getattr(emp, "bank_deposit", 0.0)
+            self._debit_deposit_ledger(emp, getattr(emp, "bank_deposit", 0.0))  # so cai ngan hang cung phai giam (v0.33)
             if emp.employed_by and emp.employed_by in self.agents:
                 employer = self.agents[emp.employed_by]
                 if hasattr(employer, "employee_ids") and d_id in employer.employee_ids:
@@ -554,6 +669,7 @@ class MacroEnvironment:
             bailed_out_bank_id, bailed_bank = max(dead_banks, key=lambda item: item[1].reserves)
             bailout_cost = max(0.0, -bailed_bank.reserves)
             self.gov.treasury -= bailout_cost
+            self.treasury_outflow_bailout_episode += bailout_cost
             bailed_bank.reserves = 0.0
             # KHÔNG cho không (xem chú thích Bagehot ở trên): khoản cứu trợ là
             # một khoản NỢ thật, Bank phải trả dần kèm lãi phạt
@@ -578,14 +694,38 @@ class MacroEnvironment:
             # (kể cả âm) được Kho bạc hấp thụ tường minh, KHÔNG "bốc hơi" âm thầm.
             self.gov.treasury += bk.reserves
             bk.reserves = 0.0  # tránh đếm trùng trong sum(b.reserves for b in self.banks) ở macro/M2
-            # Dọn tham chiếu treo (stale) tới bank đã chết để rule_engine.py Section
-            # 5/8B tự chọn lại ngân hàng còn sống ở bước kế tiếp (đã hỗ trợ sẵn qua
-            # "existing_creditor/depository not in bank_lookup" -- xem rule_engine.py).
+            # XỬ LÝ NGÂN HÀNG THẤT BẠI BẰNG "MUA LẠI & KẾ THỪA" (Purchase & Assumption -- cơ chế xử lý
+            # ngân hàng đổ vỡ chuẩn của FDIC; FDIC, 1998, "Managing the Crisis: The FDIC and RTC
+            # Experience, 1980-1994"): một ngân hàng còn sống nhận toàn bộ SỔ TIỀN GỬI và SỔ CHO VAY
+            # của ngân hàng đã chết, và các tham chiếu creditor/depository của hộ/doanh nghiệp được
+            # chuyển sang ngân hàng kế thừa. LỖI ĐÃ SỬA (v0.33, KNOWN_PATHOLOGIES.md #28): trước
+            # đây tham chiếu chỉ bị đặt None -- tiền gửi/dư nợ của ngân hàng chết biến mất khỏi
+            # sổ cái ngân hàng trong khi Employee.bank_deposit/Firm.debt còn nguyên, nên tổng sổ
+            # cái ngân hàng lệch tổng thực (rò rỉ hạch toán, chỉ xảy ra khi num_banks >= 2).
+            # Vốn còn lại (reserves) đã về Kho bạc ở trên -- việc Kho bạc giữ vốn còn người kế thừa
+            # nhận tài sản-nợ là một giản lược cố ý (không mô hình hoá giá mua lại), ghi nhận là
+            # hạn chế. Không có người kế thừa (không thể xảy ra với bailout ở trên nhưng giữ để an
+            # toàn) -> hành vi cũ: đặt None để rule_engine.py chọn lại bank ở bước sau.
+            heirs = [
+                b for b in self.banks
+                if self.agents.get(b.agent_id) is b
+                and b.status in (LifeCycleStatus.ACTIVE, LifeCycleStatus.INITIALIZED)
+            ]
+            heir = max(heirs, key=lambda b: b.reserves) if heirs else None
+            heir_id = heir.agent_id if heir is not None else None
+            if heir is not None:
+                heir.total_deposits += bk.total_deposits
+                heir.total_loans += bk.total_loans
+            bk.total_deposits = 0.0
+            bk.total_loans = 0.0
             for a in self.agents.values():
                 if isinstance(a, Firm) and getattr(a, "creditor_bank_id", None) == bk_id:
-                    a.creditor_bank_id = None
-                if isinstance(a, Employee) and getattr(a, "depository_bank_id", None) == bk_id:
-                    a.depository_bank_id = None
+                    a.creditor_bank_id = heir_id
+                if isinstance(a, Employee):
+                    if getattr(a, "depository_bank_id", None) == bk_id:
+                        a.depository_bank_id = heir_id
+                    if getattr(a, "creditor_bank_id", None) == bk_id:
+                        a.creditor_bank_id = heir_id
 
         # A. ĐIỀU TIẾT DÂN SỐ THEO SỨC TẢI KINH TẾ (Demographic Carrying Capacity)
         active_emps_list = [a for a in self.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
@@ -692,6 +832,7 @@ class MacroEnvironment:
                 if remaining > 0.0:
                     deposit_take = min(remaining, getattr(newborn_parent, "bank_deposit", 0.0))
                     newborn_parent.bank_deposit = getattr(newborn_parent, "bank_deposit", 0.0) - deposit_take
+                    self._debit_deposit_ledger(newborn_parent, deposit_take)  # so cai ngan hang cung phai giam (v0.33)
                     inheritance = cash_take + deposit_take
 
                 # An sinh tối thiểu: nếu thừa kế chưa đạt sàn sống, Kho bạc bù
@@ -700,6 +841,7 @@ class MacroEnvironment:
                 topup = max(0.0, MIN_NEWBORN_CASH - inheritance)
                 if topup > 0.0 and self.gov.treasury >= topup:
                     self.gov.treasury -= topup
+                    self.treasury_outflow_newborn_episode += topup
                 else:
                     topup = 0.0
                 newborn_cash = inheritance + topup
@@ -725,6 +867,7 @@ class MacroEnvironment:
                 # NHÁNH 1: lưới an sinh bảo vệ đáy, không gắn parent (xem comment ở trên)
                 grant = grant_per_newborn if self.gov.treasury >= (grant_per_newborn * 2.0) else (0.5 * grant_per_newborn)
                 self.gov.treasury -= grant
+                self.treasury_outflow_newborn_episode += grant
                 newborn_cash = grant
                 child_skill = self._sample_skill()
                 child_risk_aversion = float(np.random.uniform(0.3, 0.7))
@@ -749,6 +892,9 @@ class MacroEnvironment:
             new_emp.parent_id = parent_id_payload
             self.agents[new_eid] = new_emp
             self.births_this_step += 1
+            self.births_episode += 1
+            if newborn_parent is None:
+                self.emergency_births_episode += 1
             self.event_bus.publish(Event(
                 event_type=EventType.AGENT_BORN,
                 source_id=birth_source_id,
@@ -818,6 +964,7 @@ class MacroEnvironment:
             else:
                 grant_firm = 1000.0
                 self.gov.treasury -= grant_firm
+            self.treasury_outflow_firm_entry_episode += grant_firm
 
             new_firm = Firm(agent_id=new_fid)
             new_firm.initialize(
@@ -926,7 +1073,15 @@ class MacroEnvironment:
                 "bank_lending_rate": avg_lending_rate,
                 "unemployment_rate": unemployment_rate,
                 "average_wage": avg_wage,
-                "market_demand_factor": float(np.clip(velocity_of_money * 10.0, 0.1, 5.0)),
+                # LOI DA SUA (v0.35, KNOWN_PATHOLOGIES.md #29f, audit 2026-09-26 test F4): he so nhan cu 10.0
+                # cho ra market_demand_factor = 0.1 (san kep) O MOI BUOC -- V = GDP danh nghia / M2 ~ 0.0005-0.009
+                # (M2 gom Kho bac ~1e6 cua ban cu, xem initial_treasury) nen V*10 << 0.1 va bi kep san; Firm
+                # obs[3] ("demand_index") la mot dac trung CHET (hang so) tu khi them vao. He so nhan 100 dua V
+                # ~ 0.009 (quy mo Kho bac van hanh moi, v0.35) ve ~ 0.9 -- cung bac voi mien [0.1, 5.0] cua kep.
+                # HE SO CHUAN HOA QUAN SAT TU DO HIEU CHINH (khong doi cong thuc kinh te: V van la Fisher 1911
+                # V = GDP/M2, khong feed vao bat ky co che kinh te nao ngoai observation cua Firm). Voi
+                # initial_treasury = 1_000_000 (logic cu) dac trung nay lai chet -- la hanh vi cu, khong phai loi moi.
+                "market_demand_factor": float(np.clip(velocity_of_money * 100.0, 0.1, 5.0)),
                 "total_credit_demand": total_credit_demand,
                 "estimated_tax_evasion": real_evasion_estimate,
                 "aggregate_demand": self.eco.step_trade_volume,

@@ -10,7 +10,8 @@ class Government(BaseAgent):
     Dieu tiet tai khoa, an sinh xa hoi va toi uu hoa phuc loi cong dong.
     Tuan thu nghiem ngat contract BaseAgent theo SAS v1.0.
     """
-    def __init__(self, agent_id: str, gini_penalty_coef: float = 25.0, death_penalty_coef: float = 20.0):
+    def __init__(self, agent_id: str, gini_penalty_coef: float = 25.0, death_penalty_coef: float = 20.0,
+                 reward_mode: str = "eq_x_prod", swf_reward_scale: float = 0.02):
         super().__init__(agent_id)
         self.agent_type = AgentType.GOVERNMENT
 
@@ -51,6 +52,21 @@ class Government(BaseAgent):
         # theo tung episode, phai giu dung theo scenario dang chay.
         self.gini_penalty_coef: float = float(gini_penalty_coef)
         self.death_penalty_coef: float = float(death_penalty_coef)
+        # DANG REWARD (v0.35, KNOWN_PATHOLOGIES.md #29b) -- LUA CHON MO HINH nen la field ScenarioConfig:
+        #   "eq_x_prod" (MAC DINH, DA SUA): reward = swf_reward_scale * (1 - Gini) * GDP_thuc - phat tu vong -
+        #       phat no cong -- CAN VOI thuoc do danh gia cua benchmark (be/benchmark.py: Eq x Prod), tuc la
+        #       phuc loi xa hoi = cong bang x nang suat (Zheng et al., 2022, "The AI Economist: Taxation
+        #       policy design via two-level deep multi-agent reinforcement learning", Science Advances
+        #       8(18), eabk2607).
+        #   "legacy": dang CU (0.002*GDP_thuc + 0.005*dGDP_thuc - gini_penalty_coef*Gini^2 - tu vong - no
+        #       cong) -- KHONG khop thuoc do benchmark (audit 2026-09-26: chinh sach toi uu cho reward != chinh
+        #       sach toi uu cho thuoc do danh gia), giu de ablation/tai hien.
+        if reward_mode not in ("eq_x_prod", "legacy"):
+            raise ValueError(f"reward_mode phai la 'eq_x_prod' hoac 'legacy', nhan '{reward_mode}'")
+        self.reward_mode: str = reward_mode
+        self.swf_reward_scale: float = float(swf_reward_scale)
+        # Muc TRO CAP THAT NGHIEP hien hanh (action[4], xem decide()) -- luu de export/hien thi.
+        self.unemployment_relief_level: float = 0.40
 
     def initialize(self, 
                    initial_treasury: float = 1000000.0,
@@ -63,6 +79,7 @@ class Government(BaseAgent):
         self.last_purchase = 0.0
         self.demand_injection_ratio = 0.0
         self.last_demand_injection_value = 0.0
+        self.unemployment_relief_level = 0.40
         self.public_debt = 0.0
         self.current_gdp = float(initial_treasury)
         self.last_gdp = float(initial_treasury)
@@ -116,7 +133,7 @@ class Government(BaseAgent):
 
     def decide(self, observation: Observation) -> Action:
         """
-        Khong gian hanh dong 4 chieu:
+        Khong gian hanh dong 5 chieu:
         [0]: Muc tieu Thue suat Thu nhap Ca nhan (Worker Tax Rate): [0.0, 0.5]
         [1]: Muc tieu Thue suat Doanh nghiep (Firm Tax Rate): [0.0, 0.5]
         [2]: Ty le thu thue+phat ky truoc dung de CHI MUA HANG (Purchase Ratio rho): [0.0, 1.0]
@@ -128,13 +145,23 @@ class Government(BaseAgent):
              nguyen tac hai tang cua AI Economist (Zheng et al., 2022) da ghi trong CLAUDE.md
              ("chi Government moi mang trach nhiem phuc loi xa hoi qua chinh sach"). Xem
              rule_engine.py Section 4B.
+        [4]: Muc TRO CAP THAT NGHIEP (Unemployment Relief Level): [0.0, 1.0] -- MOI (v0.35, KNOWN_PATHOLOGIES.md
+             #29a). Truoc day muc tro cap la HANG SO hardcode (0.40 x chi phi sinh hoat trong 3 thang
+             dau that nghiep, 0.15 x trong thang 4-6, 0 sau do; rule_engine.py Section 4), nen Government
+             KHONG co cong cu an sinh nao du ban than la nguoi duy nhat mang trach nhiem phuc loi xa hoi
+             (nguyen tac hai tang, CLAUDE.md) -- reward Government phat tu vong nhung Government khong the
+             lam gi de giam tu vong do that nghiep keo dai ngoai chinh sach thue/chi tieu gian tiep.
+             Action[4] = muc thay the thu nhap thang dau tien (ty le so voi chi phi sinh hoat); lich giam
+             dan theo thoi gian that nghiep (0.375x o thang 4-6, 0 sau do -- ty le 0.15/0.40 cu) giu
+             nguyen (Shavell & Weiss, 1979, "The Optimal Payment of Unemployment Insurance Benefits over
+             Time", Journal of Political Economy 87(6), 1347-1362 -- loi ich toi uu giam dan theo thoi gian).
         """
         if "injected_action" in observation.metadata:
             raw_action = observation.metadata["injected_action"]
         else:
             # Chinh sach tai khoa can bang mac dinh (rho = 1: chi mua hang bang dung so thu ky
-            # truoc; demand_injection_ratio = 0: khong bom/rut them)
-            raw_action = np.array([0.15, 0.20, 1.0, 0.0], dtype=np.float32)
+            # truoc; demand_injection_ratio = 0: khong bom/rut them; tro cap = 0.40 -- KHOP hanh vi cu)
+            raw_action = np.array([0.15, 0.20, 1.0, 0.0, 0.40], dtype=np.float32)
 
         return Action(
             agent_id=self.agent_id,
@@ -144,11 +171,11 @@ class Government(BaseAgent):
 
     def validate_action(self, action: Action) -> ValidationResult:
         vals = action.values
-        if len(vals) < 4:
+        if len(vals) < 5:
             return ValidationResult(
                 is_valid=False,
-                sanitized_values=np.array([0.15, 0.20, 1.0, 0.0], dtype=np.float32),
-                reason="Action vector must have 4 elements"
+                sanitized_values=np.array([0.15, 0.20, 1.0, 0.0, 0.40], dtype=np.float32),
+                reason="Action vector must have 5 elements"
             )
 
         # Gioi han muc thue phu hop hien phap, khong cho phep ap dat thue qua cao triet tieu san xuat
@@ -166,7 +193,12 @@ class Government(BaseAgent):
         # ban thiet ke o Economy truoc khi chuyen sang day (v0.22).
         demand_injection_ratio = float(np.clip(vals[3], -0.20, 0.20))
 
-        sanitized = np.array([worker_tax, firm_tax, purchase_ratio, demand_injection_ratio], dtype=np.float32)
+        # Muc tro cap that nghiep [0, 1] (xem decide()). Bien tren 1.0 = thay the 100% chi phi sinh hoat
+        # (tuong duong "khong con dong co tim viec", HE SO CAU TRUC TU DO HIEU CHINH). Rang buoc ngan
+        # sach THAT (Kho bac > 1000 moi duoc chi, rule_engine.py Section 4) tu chan viec chi vo han.
+        relief_level = float(np.clip(vals[4], 0.0, 1.0))
+
+        sanitized = np.array([worker_tax, firm_tax, purchase_ratio, demand_injection_ratio, relief_level], dtype=np.float32)
         return ValidationResult(is_valid=True, sanitized_values=sanitized)
 
     def apply_result(self, transition_result: TransitionResult) -> None:
@@ -248,6 +280,7 @@ class Government(BaseAgent):
         self.purchase_ratio = float(delta.get("executed_purchase_ratio", self.purchase_ratio))
         self.demand_injection_ratio = float(delta.get("demand_injection_ratio", self.demand_injection_ratio))
         self.last_demand_injection_value = float(delta.get("demand_injection_effect", 0.0))
+        self.unemployment_relief_level = float(delta.get("executed_relief_level", self.unemployment_relief_level))
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         """
@@ -284,6 +317,27 @@ class Government(BaseAgent):
         # kinh tế. Khử giá theo khái niệm "volume measure" của hạch toán quốc gia (United
         # Nations et al. (2009), "System of National Accounts 2008", Ch.15; Hicks (1946),
         # "Value and Capital", phân biệt real/nominal). Hệ số 0,002/0,005 GIỮ NGUYÊN.
+        # Death penalty: moi cai chet = -death_penalty_coef (mac dinh -20, xem giai thich hieu chinh o tren)
+        new_deaths = int(transition_result.state_delta.get("new_deaths", 0))
+        death_penalty = float(new_deaths) * self.death_penalty_coef
+
+        # Debt penalty: nhỏ, chỉ kích hoạt khi nợ lớn
+        debt_penalty = (self.public_debt * 0.00005) if self.public_debt > 0 else 0.0
+
+        if self.reward_mode == "eq_x_prod":
+            # CAN REWARD VOI THUOC DO DANH GIA (v0.35, KNOWN_PATHOLOGIES.md #29b): phuc loi xa hoi =
+            # CONG BANG x NANG SUAT (Zheng et al., 2022, Science Advances 8(18), eabk2607 -- chinh la
+            # thuoc do be/benchmark.py dung: Equality = 1 - Gini, Productivity = GDP thuc, Eq x Prod).
+            # Truoc day reward la tong tuyen tinh khac (0.002*GDP + 0.005*dGDP - 25*Gini^2), trong do so
+            # hang Gini^2 (toi da ~-11/buoc) ap dao GDP (~+1.6/buoc): chinh sach toi uu cho reward KHAC chinh
+            # sach toi uu cho thuoc do benchmark -- khong the ket luan "RL vuot baseline tren Eq x Prod"
+            # khi RL toi uu hoa mot muc tieu khac. swf_reward_scale=0.02 la HE SO CHUAN HOA TU DO HIEU
+            # CHINH (dua Eq x Prod ~250 ve ~5/buoc, cung bac voi phat tu vong 20/ca), khong doi dang ham.
+            equality = 1.0 - float(np.clip(self.current_gini, 0.0, 1.0))
+            social_welfare = self.swf_reward_scale * equality * self.current_real_gdp - death_penalty - debt_penalty
+            return float(np.clip(social_welfare, -100.0, 100.0))
+
+        # --- DANG CU ("legacy", giu de tai hien) ---
         # GDP level: positive signal để agent biết nền kinh tế đang hoạt động
         gdp_level = self.current_real_gdp * 0.002
 
@@ -292,13 +346,6 @@ class Government(BaseAgent):
 
         # Gini penalty: [0,1]^2 * gini_penalty_coef (mac dinh 25 -> toi da -25)
         gini_penalty = self.gini_penalty_coef * (self.current_gini ** 2)
-
-        # Death penalty: moi cai chet = -death_penalty_coef (mac dinh -20, xem giai thich hieu chinh o tren)
-        new_deaths = int(transition_result.state_delta.get("new_deaths", 0))
-        death_penalty = float(new_deaths) * self.death_penalty_coef
-
-        # Debt penalty: nhỏ, chỉ kích hoạt khi nợ lớn
-        debt_penalty = (self.public_debt * 0.00005) if self.public_debt > 0 else 0.0
 
         social_welfare = gdp_level + gdp_growth - gini_penalty - death_penalty - debt_penalty
         return float(np.clip(social_welfare, -100.0, 100.0))
@@ -317,6 +364,7 @@ class Government(BaseAgent):
             "purchase_ratio": self.purchase_ratio,
             "last_purchase": self.last_purchase,
             "demand_injection_ratio": round(self.demand_injection_ratio, 4),
+            "unemployment_relief_level": round(self.unemployment_relief_level, 4),
             "last_demand_injection_value": round(self.last_demand_injection_value, 1),
             "current_gini": self.current_gini,
             "dead_citizens_count": self.dead_citizens_count
@@ -330,6 +378,7 @@ class Government(BaseAgent):
         self.last_purchase = 0.0
         self.demand_injection_ratio = 0.0
         self.last_demand_injection_value = 0.0
+        self.unemployment_relief_level = 0.40
         self.current_real_gdp = 0.0
         self.last_real_gdp = 0.0
         self.treasury = 0.0

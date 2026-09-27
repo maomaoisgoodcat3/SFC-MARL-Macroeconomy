@@ -57,7 +57,11 @@ class Employee(BaseAgent):
         self.wage: float = 0.0
         self.debt: float = 0.0
         self.unemployed_streak: int = 0
-        
+        # Moc timestep dau tien duoc phep tuyen lai sau khi bi sa thai vi lam luoi (dau an sa thai,
+        # Gibbons & Katz 1991 -- xem rule_engine.py Section 2/3). -1 = khong co dau an. TRANG THAI AN:
+        # khong nam trong observation (giong unemployed_streak).
+        self.hire_lockout_until: int = -1
+
         # Luu tru hanh dong gan nhat
         self.last_work_effort: float = 0.0
         self.last_declare_ratio: float = 1.0
@@ -83,6 +87,7 @@ class Employee(BaseAgent):
         self.debt = 0.0
         self.creditor_bank_id = None
         self.unemployed_streak = 0
+        self.hire_lockout_until = -1
         # Chuyen ngay sang ACTIVE khi da duoc nap thong so
         self.status = LifeCycleStatus.ACTIVE
 
@@ -200,6 +205,8 @@ class Employee(BaseAgent):
             self.skill_level = float(np.clip(self.skill_level + delta["skill_delta"], 0.4, 4.0))
         if "unemployed_streak" in delta:
             self.unemployed_streak = int(delta["unemployed_streak"])
+        if "hire_lockout_until" in delta:
+            self.hire_lockout_until = int(delta["hire_lockout_until"])
 
         if "employed_by" in delta:
             self.employed_by = delta["employed_by"]
@@ -305,6 +312,7 @@ class Employee(BaseAgent):
         self.debt = 0.0
         self.age = 20
         self.unemployed_streak = 0
+        self.hire_lockout_until = -1
 
     def terminate(self, reason: str = "") -> None:
         super().terminate(reason)

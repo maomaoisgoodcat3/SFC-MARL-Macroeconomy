@@ -13,7 +13,10 @@ Nguyen ly: Stock-Flow Consistent (Godley, W., & Lavoie, M. (2007), "Monetary
 Economics: An Integrated Approach to Credit, Money, Income, Production and Wealth",
 Palgrave Macmillan). Tieu chuan moi buoc (dung nhu test_sfc_accounting.py):
 
-    delta_total_system_value == -(bad_debt) - (capital_depreciation)
+    delta_total_system_value == -(capital_depreciation)
+
+(v0.33: bo vế -bad_debt -- vo no chi xoa so khoan vay, khong huy tien; xem KNOWN_PATHOLOGIES.md #28
+va test_sfc_accounting.py.) Cong them 2 bat bien so cai ngan hang moi buoc: tien gui va du no.
 
 TIEU CHUAN CO DINH tu nay: MOI thay doi cham vao dong tien phai chay bo test nay
 (policy ngau nhien), khong chi bo test heuristic.
@@ -63,12 +66,23 @@ def _random_actions(agent_ids, rng, std):
     return out
 
 
+def _assert_ledgers(env: MacroEnvironment, seed: int, step: int) -> None:
+    """Bat bien so cai ngan hang (xem ban day du o test_sfc_accounting.py::_assert_ledgers)."""
+    emps = [a for a in env.agents.values() if isinstance(a, Employee)]
+    firms = [a for a in env.agents.values() if isinstance(a, Firm)]
+    dep_gap = sum(b.total_deposits for b in env.banks) - sum(getattr(e, "bank_deposit", 0.0) for e in emps)
+    loan_gap = sum(b.total_loans for b in env.banks) - (sum(f.debt for f in firms) + sum(e.debt for e in emps))
+    assert abs(dep_gap) <= SFC_TOLERANCE, f"[seed={seed} step={step}] LEDGER tien gui lech {dep_gap:.6f}"
+    assert abs(loan_gap) <= SFC_TOLERANCE, f"[seed={seed} step={step}] LEDGER cho vay lech {loan_gap:.6f}"
+
+
 def _total_system_value(env: MacroEnvironment) -> float:
     emp = [a for a in env.agents.values() if isinstance(a, Employee)]
     firm = [a for a in env.agents.values() if isinstance(a, Firm)]
     # + eco.strategic_reserve_fund (v0.24, quy binh on du tru dem cua Economy) -- xem chu thich
     # day du trong ham cung ten tai test_sfc_accounting.py.
-    return (env.gov.treasury + sum(b.reserves for b in env.banks)
+    # v0.36-fix1: tru no cong (xem chu thich tai test_sfc_accounting.py::_total_system_value).
+    return (env.gov.treasury - env.gov.public_debt + sum(b.reserves for b in env.banks)
             + sum(a.cash for a in firm) + sum(a.cash for a in emp)
             + sum(getattr(a, "bank_deposit", 0.0) for a in emp)
             + getattr(env.eco, "strategic_reserve_fund", 0.0))
@@ -79,23 +93,19 @@ def _total_system_value(env: MacroEnvironment) -> float:
 @pytest.mark.parametrize("seed", [3, 17])
 def test_sfc_conservation_random_policy(seed: int, std: float, num_banks: int) -> None:
     env = MacroEnvironment(num_employees=40, num_firms=5, num_banks=num_banks, max_steps=STEPS)
-    bad_debt = [0.0]
-    _accumulate_bad_debt = lambda ev: bad_debt.__setitem__(0, bad_debt[0] + float(ev.payload.get("bad_debt", 0.0)))
-    # AGENT_BANKRUPT (Firm, Merton Section 8) + AGENT_DIED (Employee chet con no tin dung
-    # tieu dung, Section 3B/9, v0.23 -- khong tai san the chap, mat trang 100%) -- ca hai
-    # cung la kenh "DefaultedDebt" duoc phep trong dang thuc bao toan SFC.
-    env.event_bus.subscribe(EventType.AGENT_BANKRUPT, _accumulate_bad_debt)
-    env.event_bus.subscribe(EventType.AGENT_DIED, _accumulate_bad_debt)
+    # v0.33 (KNOWN_PATHOLOGIES.md #28): bo vế "-bad_debt" khoi dang thuc bao toan -- vo no chi xoa so
+    # khoan vay (khong nam trong tong gia tri he thong), khong huy tien; vế cu chi "hop thuc hoa"
+    # loi ghi nhan no xau 2 lan trong Bank.apply_result (xem test_sfc_accounting.py).
     env.reset(seed=seed)
     rng = np.random.default_rng(seed)
     prev = _total_system_value(env)
     saw_injection = saw_fines = saw_purchase = False
 
     for step in range(1, STEPS + 1):
-        bad_debt[0] = 0.0
         env.step(_random_actions(list(env.agents.keys()), rng, std))
         new = _total_system_value(env)
-        unexplained = (new - prev) - (-bad_debt[0] - env.eco.last_capital_depreciation)
+        unexplained = (new - prev) - (-env.eco.last_capital_depreciation)
+        _assert_ledgers(env, seed, step)
         assert abs(unexplained) <= SFC_TOLERANCE, (
             f"[seed={seed} std={std} banks={num_banks} step={step}] SFC VIOLATED: "
             f"unexplained_leak={unexplained:.6f} (fines={env.gov.last_fines_collected:.3f}, "
@@ -110,3 +120,31 @@ def test_sfc_conservation_random_policy(seed: int, std: float, num_banks: int) -
     assert saw_injection, "Test khong bao gio kich hoat bom/rut cau (Government action[3] != 0)"
     assert saw_fines, "Test khong bao gio sinh tien phat (kenh trot thue/thanh tra khong duoc kiem)"
     assert saw_purchase, "Test khong bao gio kich hoat chi mua hang cua Chinh phu (Section 4C)"
+
+
+@pytest.mark.parametrize("seed", [31, 32])
+def test_sfc_conservation_when_deficit_creates_public_debt(seed: int) -> None:
+    """v0.36-fix1: bo test cu chua tung vao che do Kho bac AM -> no cong (diem mu). Ep che do nay (khung hoang
+    effort 0.1 + kich cau toi da + tro cap toi da + rho=1) va kiem tra dang thuc CO TRU no cong van dung tung buoc;
+    DONG THOI bat buoc kenh thuc su duoc kich hoat (co buoc Kho bac am cuoi buoc) de test khong 'pass suong'."""
+    from be.scenario_config import ScenarioConfig
+    kw = ScenarioConfig.from_yaml(os.path.join(os.path.dirname(__file__), "..", "..", "scenarios", "em_baseline.yaml")).to_env_kwargs()
+    env = MacroEnvironment(**kw)
+    env.reset(seed=seed)
+    rng = np.random.default_rng(seed)
+    prev = _total_system_value(env)
+    neg_treasury_steps = 0
+    for step in range(1, 241):
+        acts = _random_actions(list(env.agents.keys()), rng, 0.5)
+        for aid in acts:
+            if aid.startswith("emp_"):
+                acts[aid][0] = 0.1
+        acts["gov_1"][2], acts["gov_1"][3], acts["gov_1"][4] = 1.0, 0.2, 1.0
+        env.step(acts)
+        new = _total_system_value(env)
+        unexplained = (new - prev) + env.eco.last_capital_depreciation
+        assert abs(unexplained) <= SFC_TOLERANCE, f"[seed={seed} step={step}] SFC VIOLATED (co no cong): {unexplained:.6f}"
+        _assert_ledgers(env, seed, step)
+        neg_treasury_steps += env.gov.treasury < 0.0
+        prev = new
+    assert neg_treasury_steps > 0, "kich ban khong tao duoc Kho bac am -- kenh no cong khong duoc kiem"

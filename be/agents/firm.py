@@ -32,8 +32,11 @@ class Firm(BaseAgent):
         self.last_profit: float = 0.0
         self.last_revenue: float = 0.0
         self.last_declare_ratio: float = 1.0
+        # Tin hieu NHIEU ve effort trung binh cua luc luong lao dong thang truoc (v0.34, xem
+        # rule_engine.py Section 3 -- Holmstrom 1979). 0.0 khi chua co lao dong/dau episode.
+        self.last_effort_signal: float = 0.0
 
-    def initialize(self, 
+    def initialize(self,
                    productivity_factor: float = 1.2, 
                    risk_aversion: float = 0.3,
                    tax_morale: float = 0.6,
@@ -46,14 +49,18 @@ class Firm(BaseAgent):
         self.debt = 0.0
         self.employee_ids = []
         self.creditor_bank_id = None
+        self.last_effort_signal = 0.0
         self.status = LifeCycleStatus.ACTIVE
 
     def observe(self, raw_environment_state: Dict[str, Any]) -> Observation:
         """
-        Khong gian quan sat 13 chieu:
+        Khong gian quan sat 14 chieu:
         [0-3] Vi mo: Thue TNDN, Lai suat cho vay cua Bank, Luong trung binh thi truong, He so cau thi truong
         [4-10] Vi mo noi tai: Tien mat, Von dau tu, No phai tra, So nhan vien, Doanh thu gan nhat, Loi nhuan gan nhat, Nang suat
         [11] risk_aversion, [12] tax_morale -- MOI (v0.28)
+        [13] tin hieu NHIEU ve effort trung binh cua luc luong lao dong thang truoc, [0,1] -- MOI
+             (v0.34, KNOWN_PATHOLOGIES.md #27; Holmstrom, 1979 -- Firm quan sat tin hieu nhieu ve
+             hanh dong cua agent; xem rule_engine.py Section 3).
 
         LOI DA SUA cho [11]/[12] (phat hien qua audit chu dong theo yeu cau nguoi
         dung 2026-09-25, cung dot voi employee.py): risk_aversion anh huong that
@@ -85,6 +92,7 @@ class Firm(BaseAgent):
             self.productivity_factor,
             self.risk_aversion,
             self.tax_morale,
+            self.last_effort_signal,
         ], dtype=np.float32)
 
         return Observation(
@@ -152,6 +160,8 @@ class Firm(BaseAgent):
         self.last_revenue = float(delta.get("executed_revenue", 0.0))
         self.last_profit = float(delta.get("executed_profit", 0.0))
         self.last_declare_ratio = float(delta.get("executed_declare_ratio", 1.0))
+        if "observed_effort_signal" in delta:
+            self.last_effort_signal = float(delta["observed_effort_signal"])
 
         if "creditor_bank_id" in delta:
             self.creditor_bank_id = delta["creditor_bank_id"]
@@ -242,6 +252,7 @@ class Firm(BaseAgent):
         self.creditor_bank_id = None
         self.last_profit = 0.0
         self.last_revenue = 0.0
+        self.last_effort_signal = 0.0
 
     def terminate(self, reason: str = "") -> None:
         super().terminate(reason)

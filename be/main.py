@@ -58,8 +58,21 @@ def parse_args():
     parser.add_argument("--firm-entry-unemployment-threshold", type=float, default=0.08, help="Nguong ty le that nghiep kich hoat dieu kien 'co du thua lao dong' cho gia nhap nganh")
     parser.add_argument("--firm-entry-profitability-margin", type=float, default=0.0, help="Ha nguong loi nhuan/von can de gia nhap nganh xuong duoi avg_deposit_rate (0=hanh vi cu, procyclical)")
     parser.add_argument("--wage-renegotiation-prob", type=float, default=0.12, help="Xac suat Calvo-style dam phan lai luong moi buoc cho lao dong da co viec (0=hanh vi cu, luong khoa vinh vien -- xem KNOWN_PATHOLOGIES.md wage-mrpl-ratchet)")
+    parser.add_argument("--shirking-monitor-prob", type=float, default=0.05, help="Xac suat/thang lao dong co viec bi giam sat va phat hien neu effort < nguong (Shapiro & Stiglitz 1984; 0=hanh vi cu, effort khong co loi ich -- KNOWN_PATHOLOGIES.md #27)")
+    parser.add_argument("--shirking-effort-threshold", type=float, default=0.5, help="Nguong effort duoi do bi coi la lam luoi")
+    parser.add_argument("--effort-signal-noise-sigma", type=float, default=0.10, help="Do lech chuan nhieu trong tin hieu effort Firm quan sat (Holmstrom 1979)")
+    parser.add_argument("--buffer-stock-rule", type=str, choices=["band_scaled", "legacy_fixed_anchor"], default="band_scaled", help="Binh on du tru dem Economy: 'band_scaled' (v0.37) hoac 'legacy_fixed_anchor' (logic CU) -- KNOWN_PATHOLOGIES.md #31")
+    parser.add_argument("--buffer-max-market-share", type=float, default=0.15, help="kappa: quy mo can thiep toi da so voi thi truong hien tai")
+    parser.add_argument("--buffer-price-band", type=float, default=0.05, help="Do rong dai gia quanh gia tham chieu EMA")
+    parser.add_argument("--buffer-reference-halflife-months", type=float, default=12.0, help="Chu ky ban ra EMA gia tham chieu")
+    parser.add_argument("--subsidy-funding-rule", type=str, choices=["affordable", "legacy_gate"], default="affordable", help="Tai tro tro cap that nghiep: 'affordable' (chi trong kha nang Kho bac, v0.36) hoac 'legacy_gate' (logic CU: nguong Kho bac > 1000 tuyet doi) -- KNOWN_PATHOLOGIES.md #30b")
+    parser.add_argument("--shirker-rehire-lockout-months", type=int, default=9, help="So thang nguoi bi sa thai vi luoi khong duoc tuyen lai (dau an sa thai, Gibbons & Katz 1991; 0=tuyen lai ngay)")
     parser.add_argument("--mortality-rate-floor", type=int, default=30, help="San mau so ty le tu vong/sinh cua Economy")
     parser.add_argument("--initial-economy-buffer-fund", type=float, default=10000.0, help="Von mo quy binh on du tru dem cua Economy")
+    parser.add_argument("--initial-treasury", type=float, default=25000.0, help="Von Kho bac luc reset (v0.35; 1000000 tai hien logic CU: rang buoc ngan sach vo hieu)")
+    parser.add_argument("--treasury-funds-initial-endowments", action="store_true", help="Tai hien logic CU: Kho bac tai tro von khoi tao cua Firm/Employee (mac dinh: khong -- initial_treasury la so du van hanh sau khi cap von)")
+    parser.add_argument("--government-reward-mode", type=str, choices=["eq_x_prod", "legacy"], default="eq_x_prod", help="Dang reward Government: 'eq_x_prod' (can voi thuoc do benchmark, v0.35) hoac 'legacy' (dang cu)")
+    parser.add_argument("--swf-reward-scale", type=float, default=0.02, help="He so chuan hoa reward Eq x Prod cua Government")
     parser.add_argument("--initial-lending-rate", type=float, default=0.06, help="Lai suat cho vay khoi tao (annual)")
     parser.add_argument("--initial-deposit-rate", type=float, default=0.02, help="Lai suat tien gui khoi tao (annual)")
     parser.add_argument("--gini-penalty-coef", type=float, default=25.0, help="He so phat Gini^2 trong reward Government")
@@ -67,6 +80,8 @@ def parse_args():
     parser.add_argument("--npl-flow-penalty-coef", type=float, default=0.06, help="He so phat no xau MOI phat sinh trong reward Bank")
     parser.add_argument("--npl-stock-penalty-coef", type=float, default=50.0, help="He so phat ty le ton kho NPL/tong du no trong reward Bank")
     parser.add_argument("--npl-writeoff-months", type=int, default=6, help="So thang no xau duoc mo truoc khi write-off (IFRS 9 / Basel NPL staging)")
+    parser.add_argument("--bank-failure-criterion", type=str, choices=["equity", "reserves"], default="equity", help="Tieu chi vo no ngan hang: 'equity' (von chu so huu = reserves + du no, DA SUA v0.33) hoac 'reserves' (tai hien hanh vi CU) -- xem KNOWN_PATHOLOGIES.md #28")
+    parser.add_argument("--bank-failure-floor", type=float, default=100000.0, help="Nguong dung sai von/reserves am truoc khi tuyen ngan hang vo no")
     parser.add_argument("--emp-death-penalty-base", type=float, default=100.0, help="Muc phat tu vong goc cua Employee (ratio=0, tuc chet dung luc max_age)")
     parser.add_argument("--emp-death-penalty-horizon-multiplier", type=float, default=1.0, help="He so nhan them theo ty le quang doi con lai khi chet (Viscusi & Aldy VSL); can hieu chinh lai bang du lieu training thuc")
     parser.add_argument("--train-iters", type=int, default=500, help="Number of training iterations")
@@ -121,8 +136,21 @@ def resolve_scenario_config(args) -> ScenarioConfig:
         firm_entry_unemployment_threshold=args.firm_entry_unemployment_threshold,
         firm_entry_profitability_margin=args.firm_entry_profitability_margin,
         wage_renegotiation_prob=args.wage_renegotiation_prob,
+        shirking_monitor_prob=args.shirking_monitor_prob,
+        shirking_effort_threshold=args.shirking_effort_threshold,
+        effort_signal_noise_sigma=args.effort_signal_noise_sigma,
+        shirker_rehire_lockout_months=args.shirker_rehire_lockout_months,
+        subsidy_funding_rule=args.subsidy_funding_rule,
+        buffer_stock_rule=args.buffer_stock_rule,
+        buffer_max_market_share=args.buffer_max_market_share,
+        buffer_price_band=args.buffer_price_band,
+        buffer_reference_halflife_months=args.buffer_reference_halflife_months,
         mortality_rate_floor=args.mortality_rate_floor,
         initial_economy_buffer_fund=args.initial_economy_buffer_fund,
+        initial_treasury=args.initial_treasury,
+        treasury_funds_initial_endowments=args.treasury_funds_initial_endowments,
+        government_reward_mode=args.government_reward_mode,
+        swf_reward_scale=args.swf_reward_scale,
         initial_lending_rate=args.initial_lending_rate,
         initial_deposit_rate=args.initial_deposit_rate,
         gini_penalty_coef=args.gini_penalty_coef,
@@ -130,6 +158,8 @@ def resolve_scenario_config(args) -> ScenarioConfig:
         npl_flow_penalty_coef=args.npl_flow_penalty_coef,
         npl_stock_penalty_coef=args.npl_stock_penalty_coef,
         npl_writeoff_months=args.npl_writeoff_months,
+        bank_failure_criterion=args.bank_failure_criterion,
+        bank_failure_floor=args.bank_failure_floor,
         emp_death_penalty_base=args.emp_death_penalty_base,
         emp_death_penalty_horizon_multiplier=args.emp_death_penalty_horizon_multiplier,
     )
@@ -268,6 +298,8 @@ def run_training(args):
             treasury = custom_metrics.get("treasury_mean", float("nan"))
             avg_wage = custom_metrics.get("avg_wage_mean", float("nan"))
             births = custom_metrics.get("births_this_step_mean", float("nan"))
+            deaths_ep = custom_metrics.get("deaths_episode_mean", float("nan"))
+            em_births_ep = custom_metrics.get("emergency_births_episode_mean", float("nan"))
 
             print(
                 f"[TRAIN] Iter: {current_iter:4d} | "
@@ -282,7 +314,9 @@ def run_training(args):
                 f"Treasury: {treasury:9.0f} | "
                 f"Reserves: {bank_res:9.1f} | "
                 f"NPL: {npl:7.1f} ({npl_ratio:4.1f}%) | "
-                f"Births: {births:3.2f}"
+                f"Births: {births:3.2f} | "
+                f"Deaths/ep: {deaths_ep:5.1f} | "
+                f"EmBirths/ep: {em_births_ep:5.1f}"
             )
 
             monitor.tick(mean_return)

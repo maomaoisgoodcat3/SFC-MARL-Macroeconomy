@@ -66,6 +66,9 @@ class Economy(BaseAgent):
         # KHAC Treasury, dam bao SFC: xem rule_engine.py Section 4D + METHODOLOGY_NOTES.md muc 2.
         self.strategic_reserve_fund: float = 0.0   # tien, cap MOT LAN tu Treasury luc reset
         self.strategic_reserve_stock: float = 0.0  # hang thiet yeu (don vi vat ly), bat dau = 0
+        # Gia tham chieu DONG (EMA cua gia thi truong) cho dai gia binh on (v0.37, rule_engine.py Section 4D,
+        # KNOWN_PATHOLOGIES.md #31). Khoi tao = initial_living_cost luc reset, sau do rule_engine cap nhat.
+        self.buffer_reference_price: float = 15.0
 
         # Ty le sinh KY TRUOC (v0.24, dung cho reward an sinh vi mo, xem calculate_reward).
         # LY DO DUNG DU LIEU KY TRUOC (khong phai ky nay): births_this_step duoc tinh trong
@@ -85,6 +88,7 @@ class Economy(BaseAgent):
         self.base_living_cost = float(initial_living_cost)
         self.last_base_living_cost = float(initial_living_cost)
         self.initial_living_cost = float(initial_living_cost)
+        self.buffer_reference_price = float(initial_living_cost)
         self.housing_inventory = int(initial_housing_inventory)
         self.housing_price = float(initial_house_price)
         self.last_housing_price = float(initial_house_price)
@@ -216,6 +220,8 @@ class Economy(BaseAgent):
         # Buffer-stock (v0.24, rule_engine.py Section 4D) -- xem chu thich day du tai __init__.
         self.strategic_reserve_fund = max(0.0, self.strategic_reserve_fund + delta.get("strategic_reserve_fund_delta", 0.0))
         self.strategic_reserve_stock = max(0.0, self.strategic_reserve_stock + delta.get("strategic_reserve_stock_delta", 0.0))
+        if "buffer_reference_price" in delta:
+            self.buffer_reference_price = float(delta["buffer_reference_price"])
 
         # LOI DA PHAT HIEN VA SUA (ra soat lai khi wiring Section 4B): ban cu
         # tinh "cost_growth = (base_living_cost - last_base_living_cost) /
@@ -352,7 +358,8 @@ class Economy(BaseAgent):
             "step_trade_volume": self.step_trade_volume,
             "last_capital_depreciation": round(self.last_capital_depreciation, 2),
             "strategic_reserve_fund": round(self.strategic_reserve_fund, 1),
-            "strategic_reserve_stock": round(self.strategic_reserve_stock, 2)
+            "strategic_reserve_stock": round(self.strategic_reserve_stock, 2),
+            "buffer_reference_price": round(self.buffer_reference_price, 3)
         }
 
     def reset(self) -> None:
@@ -370,6 +377,7 @@ class Economy(BaseAgent):
         self.last_capital_depreciation = 0.0
         self.strategic_reserve_fund = 0.0
         self.strategic_reserve_stock = 0.0
+        self.buffer_reference_price = 15.0
         self.last_births_this_step = 0
 
     def terminate(self, reason: str = "") -> None:

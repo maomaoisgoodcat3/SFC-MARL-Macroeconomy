@@ -103,19 +103,22 @@ def saez_effective_rate(mean_income: float, base_living_cost: float, elasticity:
 
 def free_market_gov_action() -> np.ndarray:
     """Khong thue, ngan sach can bang (rho=1 nhung khong co gi de chi), khong bom cau."""
-    return np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32)
+    # relief=0.0: thi truong tu do KHONG co chuyen giao an sinh (v0.35; truoc do tro cap hardcode 0.40 ap
+    # cho moi baseline ke ca thi truong tu do -- khong dung dinh nghia "khong can thiep").
+    return np.array([0.0, 0.0, 1.0, 0.0, 0.0], dtype=np.float32)
 
 
 def us_federal_gov_action(avg_monthly_wage: float, base_living_cost: float) -> np.ndarray:
     rate = us_federal_effective_rate(avg_monthly_wage, base_living_cost)
     # Thue TNDN dung CUNG bieu (paper goc khong tach rieng thue DN, dung chung
     # 1 bieu luy tien cho ca ca nhan -- gia dinh don gian hoa nhat quan).
-    return np.array([rate, rate, 1.0, 0.0], dtype=np.float32)
+    # relief=0.40: GIU dung muc tro cap hardcode cu (v0.35 -- de ket qua benchmark so sanh duoc voi truoc).
+    return np.array([rate, rate, 1.0, 0.0, 0.40], dtype=np.float32)
 
 
 def saez_gov_action(avg_monthly_wage: float, base_living_cost: float) -> np.ndarray:
     rate = saez_effective_rate(avg_monthly_wage, base_living_cost)
-    return np.array([rate, rate, 1.0, 0.0], dtype=np.float32)
+    return np.array([rate, rate, 1.0, 0.0, 0.40], dtype=np.float32)
 
 
 def fixed_rate_bank_action(lending_rate: float = 0.06, deposit_rate: float = 0.02,

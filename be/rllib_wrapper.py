@@ -16,7 +16,7 @@ from be.agents.bank import compute_npl_ratio_pct
 # KHONG GIAN QUAN SAT (OBSERVATION SPACES)
 # ==============================================================================
 EMPLOYEE_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(15,), dtype=np.float32)  # +2: risk_aversion, tax_morale (v0.28)
-FIRM_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32)  # +2: risk_aversion, tax_morale (v0.28)
+FIRM_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(14,), dtype=np.float32)  # +2: risk_aversion, tax_morale (v0.28); +1: tin hieu effort co nhieu (v0.34)
 GOVERNMENT_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(10,), dtype=np.float32)
 BANK_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float32)  # +1: bailout_debt (v0.28, xem bank.py)
 SUPERVISOR_OBS_SPACE = Box(low=-np.inf, high=np.inf, shape=(8,), dtype=np.float32)
@@ -41,8 +41,11 @@ GOVERNMENT_ACT_SPACE = Box(
     # [3]: demand_injection_ratio [-0.20, 0.20] -- CHUYEN TU Economy sang day (v0.22, xem
     # KNOWN_PATHOLOGIES.md + government.py::decide()) sau audit tinh mach lac kinh te tong
     # the: 2 tac tu doc lap cung chi mot ngan sach vi pham nguyen tac hai tang (CLAUDE.md).
-    low=np.array([0.0, 0.0, 0.0, -0.20], dtype=np.float32),
-    high=np.array([0.5, 0.5, 1.0, 0.20], dtype=np.float32),
+    # [4]: unemployment_relief_level [0, 1] -- MOI (v0.35, KNOWN_PATHOLOGIES.md #29a): muc tro cap
+    # that nghiep (ty le so voi chi phi sinh hoat), truoc day hang so hardcode 0.40. PHAI khop bien
+    # trong Government.validate_action().
+    low=np.array([0.0, 0.0, 0.0, -0.20, 0.0], dtype=np.float32),
+    high=np.array([0.5, 0.5, 1.0, 0.20, 1.0], dtype=np.float32),
     dtype=np.float32
 )
 BANK_ACT_SPACE = Box(
@@ -208,6 +211,18 @@ class InstitutionalMetricsCallback(DefaultCallbacks):
         # --- Lam phat + nhan khau hoc ---
         episode.custom_metrics["inflation_pct"] = float(sub_env.eco.inflation_rate * 100.0)
         episode.custom_metrics["births_this_step"] = float(getattr(sub_env, "births_this_step", 0))
+        # v0.31 (logging only): gia tri o BUOC CUOI = TONG CA CA EPISODE (bo dem tich luy, reset
+        # moi episode). deaths_episode: tong ca tu vong (gov.dead_citizens_count); births_episode /
+        # emergency_births_episode: tong ca sinh / so ca sinh tu luoi an sinh khan cap (Kho bac tai
+        # tro, dan so < hard_min_emp) -- xem KNOWN_PATHOLOGIES.md #29d.
+        episode.custom_metrics["deaths_episode"] = float(sub_env.gov.dead_citizens_count)
+        episode.custom_metrics["births_episode"] = float(getattr(sub_env, "births_episode", 0))
+        episode.custom_metrics["emergency_births_episode"] = float(getattr(sub_env, "emergency_births_episode", 0))
+        # v0.35-fix1 (logging only, cung mau nhu tren): 3 khoan Kho bac chi "NGOAI SO" (khong di qua
+        # net_budget cua Government) -- xem env.py::__init__ + KNOWN_PATHOLOGIES.md #29c/FUTURE_WORK.md #9.
+        episode.custom_metrics["treasury_outflow_newborn_episode"] = float(getattr(sub_env, "treasury_outflow_newborn_episode", 0.0))
+        episode.custom_metrics["treasury_outflow_firm_entry_episode"] = float(getattr(sub_env, "treasury_outflow_firm_entry_episode", 0.0))
+        episode.custom_metrics["treasury_outflow_bailout_episode"] = float(getattr(sub_env, "treasury_outflow_bailout_episode", 0.0))
 
     def on_episode_end(self, *, worker, base_env, policies, episode, env_index, **kwargs):
         emp_series = episode.user_data.get("active_employees_series", [])

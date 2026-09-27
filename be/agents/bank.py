@@ -26,9 +26,30 @@ class Bank(BaseAgent):
     Tuan thu nghiem ngat contract BaseAgent theo SAS v1.0.
     """
     def __init__(self, agent_id: str, npl_flow_penalty_coef: float = 0.06, npl_stock_penalty_coef: float = 50.0,
-                 npl_writeoff_months: int = 6):
+                 npl_writeoff_months: int = 6, failure_criterion: str = "equity",
+                 failure_floor: float = 100000.0):
         super().__init__(agent_id)
         self.agent_type = AgentType.BANK
+
+        # TIEU CHI VO NO NGAN HANG (v0.33, KNOWN_PATHOLOGIES.md #28) -- LUA CHON CALIBRATION/MO HINH
+        # nen la field ScenarioConfig (tai hien duoc):
+        #   "equity"   (MAC DINH, DA SUA): ngan hang vo no khi VON CHU SO HUU (equity) am qua san:
+        #       equity = reserves + total_loans   (xem chu thich "reserves la vi the tien mat RONG"
+        #       ngay duoi day + docstring apply_result). Day la dinh nghia an toan von chuan cua
+        #       bilan ngan hang (tai san - no phai tra < 0 = mat kha nang thanh toan; Basel
+        #       Committee on Banking Supervision, 2011, "Basel III: A global regulatory framework
+        #       for more resilient banks and banking systems" -- phan Tier 1/equity capital).
+        #   "reserves" (tai hien hanh vi CU): chi nhin reserves < -failure_floor -- KHONG nhin dau
+        #       tai san cho vay, nen (1) ngan hang giau khoan vay van co the "vo no" chi vi da giai
+        #       ngan nhieu (reserves am) va (2) khi ket hop voi loi ghi nhan no xau 2 lan (da sua,
+        #       xem apply_result) tao ra vo no ao. Khong con y nghia kinh te -- chi giu de ablation.
+        # failure_floor = 100000 la NGUONG DUNG SAI VON am tuy chon (gia tri CU cua nguong reserves,
+        # giu nguyen de khong doi do lon "khoan dung" truoc khi Kho bac can thiep) -- HE SO TU DO
+        # HIEU CHINH, khong suy ra tu Basel III.
+        if failure_criterion not in ("equity", "reserves"):
+            raise ValueError(f"failure_criterion phai la 'equity' hoac 'reserves', nhan '{failure_criterion}'")
+        self.failure_criterion: str = failure_criterion
+        self.failure_floor: float = float(failure_floor)
 
         # He so hieu chinh reward (calibration constants, xem calculate_reward)
         # -- co the cau hinh qua ScenarioConfig, KHONG doi dang ham reward.
@@ -263,17 +284,22 @@ class Bank(BaseAgent):
         self.non_performing_loans = float(max(0.0, self.non_performing_loans + new_defaults - total_writeoff))
         self.last_default_loss = new_defaults
 
-        # QUAN TRỌNG: write-off CHỈ trừ khỏi non_performing_loans (metric theo
-        # dõi/đầu vào reward) -- KHÔNG trừ reserves thêm lần nữa. Tổn thất tín
-        # dụng THẬT SỰ đã được ghi nhận DUY NHẤT MỘT LẦN ngay tại thời điểm vỡ
-        # nợ (dòng dưới đây), đúng tinh thần kế toán ngân hàng thật: một khoản
-        # nợ đã trích lập dự phòng đầy đủ (đã trừ reserves) thì write-off chỉ
-        # là thao tác khép sổ theo dõi, không tạo thêm tổn thất P&L. Trừ
-        # reserves thêm lần nữa ở đây sẽ ghi nhận TRÙNG cùng một khoản lỗ, vi
-        # phạm bảo toàn SFC (đã chạy lại be/tests/test_sfc_accounting.py để
-        # xác nhận thiết kế này không phá vỡ đẳng thức bảo toàn).
-        if new_defaults > 0.0:
-            self.reserves -= new_defaults  # ngân hàng chịu lỗ tín dụng thực sự
+        # LỖI ĐÃ SỬA (v0.33, KNOWN_PATHOLOGIES.md #28): tại đây TRƯỚC ĐÂY có thêm dòng
+        # `self.reserves -= new_defaults` ("ngân hàng chịu lỗ tín dụng thực sự"). Đó là GHI NHẬN
+        # TRÙNG cùng một khoản lỗ. Kế toán đúng (Godley & Lavoie, 2007 -- SFC: một khoản lỗ chỉ
+        # đi qua đúng MỘT dòng bảng cân đối):
+        #   - Lúc GIẢI NGÂN khoản vay D: reserves -D, total_loans +D, (người vay) cash +D --
+        #     tiền ĐÃ RỜI reserves và đang lưu hành ở khu vực tư (tài sản đổi dạng, không mất).
+        #   - Lúc VỠ NỢ: khoản vay bị XOÁ SỔ (loans_delta = -projected_debt, ở trên) -- ĐÂY là
+        #     dòng ghi nhận tổn thất (vốn chủ sở hữu = reserves + total_loans giảm đúng phần
+        #     khoản vay không thu hồi bằng tiền mặt). reserves KHÔNG được trừ thêm vì tiền của
+        #     khoản vay đã rời reserves từ lúc giải ngân; trừ tiếp = phạt ngân hàng 2D cho khoản
+        #     vay D và HUỶ tiền khỏi hệ thống (tổng Treasury + reserves + cash + deposit giảm
+        #     đúng new_defaults mà không có bên nhận -- test SFC cũ từng "hợp thức hoá" chính lỗi
+        #     này bằng vế expected_delta = -bad_debt - overhead).
+        # Tái hiện hành vi CŨ: khôi phục dòng `self.reserves -= new_defaults` tại đây (commit
+        # trước v0.33, xem `git show` / KNOWN_PATHOLOGIES.md #28). Đây là lỗi kế toán ĐÚNG/SAI
+        # thuần tuý, không phải lựa chọn calibration nên không có toggle.
 
         self.last_interest_income = float(delta.get("interest_income", 0.0))
         self.last_interest_expense = float(delta.get("interest_expense", 0.0))
@@ -289,9 +315,33 @@ class Bank(BaseAgent):
         self.deposit_rate = float(delta.get("executed_deposit_rate", self.deposit_rate))
         self.credit_expansion_factor = float(delta.get("executed_credit_factor", self.credit_expansion_factor))
 
-        # Ranh gioi pha san ngan hang (Mat kha nang thanh toan tram trong)
-        if self.reserves < -100000.0:
-            self.terminate(reason="Bank run / Total liquidity failure")
+        # Ranh gioi pha san ngan hang (Mat kha nang thanh toan tram trong) -- xem chu thich
+        # failure_criterion o __init__ (v0.33: mac dinh theo VON CHU SO HUU thay vi reserves tho).
+        if self.is_failed():
+            self.terminate(reason="Bank insolvency (equity below floor)" if self.failure_criterion == "equity"
+                           else "Bank run / Total liquidity failure")
+
+    @property
+    def equity(self) -> float:
+        """Von chu so huu = reserves + total_loans.
+
+        LUU Y quy uoc so sach (khong phai loi): trong mo hinh nay `reserves` la vi the TIEN MAT
+        RONG cua ngan hang -- tien gui cua ho gia dinh (Bank.total_deposits) KHONG cong vao
+        reserves khi nguoi gui nop tien (rule_engine.py Section 8B chi doi cash cua ho gia dinh
+        <-> bank_deposit, khong doi reserves; tien gui duoc dem MOT LAN o `Employee.bank_deposit`
+        trong "tong gia tri he thong" cua test SFC). Tuc reserves = tien mat gop - tien gui, nen
+        von chu so huu = tien mat gop + du no - tien gui = reserves + total_loans, KHONG tru
+        total_deposits lan nua (tru se tinh trung khoan tien gui va lam von am ao khi nhieu tien
+        gui). Khoan cuu tro (bailout_debt) KHONG duoc tru o day: no la khoan vay thanh khoan tu
+        nguoi cho vay cuoi cung (Bagehot, 1873), xu ly RIENG o env.py::step() -- neu tru vao von
+        thi moi lan Kho bac cuu tro (reserves +X, bailout_debt +X) von khong doi va ngan hang bi
+        tuyen vo no lai o buoc ke tiep (vong lap cuu tro vo han)."""
+        return self.reserves + self.total_loans
+
+    def is_failed(self) -> bool:
+        if self.failure_criterion == "reserves":
+            return self.reserves < -self.failure_floor
+        return self.equity < -self.failure_floor
 
     def calculate_reward(self, transition_result: TransitionResult) -> float:
         """

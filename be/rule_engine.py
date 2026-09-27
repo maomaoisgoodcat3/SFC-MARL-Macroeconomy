@@ -70,6 +70,15 @@ class RuleEngine:
         The Journal of Finance, 49(1), 3-37.
         -> Doanh nghiệp duy trì quan hệ tín dụng với một ngân hàng cụ thể khi hệ thống có
            nhiều ngân hàng (relationship banking).
+    13. Shapiro, C., & Stiglitz, J. E. (1984), như mục 4 -- PHẦN CỐT LÕI (v0.34): giám sát
+        ngẫu nhiên + sa thải khi bị phát hiện lười (điều kiện không-lười-biếng), Section 3.
+    14. Holmström, B. (1979). "Moral Hazard and Observability". Bell Journal of Economics,
+        10(1), 74-91.
+        -> Firm quan sát tín hiệu NHIỄU về effort của lực lượng lao động (Firm obs[13]).
+    15. Gibbons, R., & Katz, L. F. (1991). "Layoffs and Lemons". Journal of Labor Economics,
+        9(4), 351-380.
+        -> Dấu án sa thải vì lười: bị loại khỏi ứng viên tuyển dụng một thời gian
+           (shirker_rehire_lockout_months).
     ----------------------------------------------------------------------------------
 
     GHI CHÚ VỀ HỆ SỐ CẤU TRÚC (CALIBRATION CONSTANTS):
@@ -81,8 +90,47 @@ class RuleEngine:
     số cụ thể. Đây là thông lệ chuẩn trong hiệu chỉnh mô hình kinh tế tính toán.
     """
     def __init__(self, event_bus: EventBus, subsistence_indexation_ceiling_mult: float = 3.0,
-                 mrpl_scale_constant: float = 0.38, wage_renegotiation_prob: float = 0.12):
+                 mrpl_scale_constant: float = 0.38, wage_renegotiation_prob: float = 0.12,
+                 shirking_monitor_prob: float = 0.05, shirking_effort_threshold: float = 0.5,
+                 effort_signal_noise_sigma: float = 0.10, shirker_rehire_lockout_months: int = 9,
+                 subsidy_funding_rule: str = "affordable",
+                 buffer_stock_rule: str = "band_scaled", buffer_max_market_share: float = 0.15,
+                 buffer_price_band: float = 0.05, buffer_reference_halflife_months: float = 12.0):
         self.event_bus: EventBus = event_bus
+        # Quy tac binh on du tru dem cua Economy (v0.37, KNOWN_PATHOLOGIES.md #31) -- xem chu thich day du
+        # tai Section 4D. "band_scaled" (mac dinh, DA SUA) | "legacy_fixed_anchor" (logic CU v0.24).
+        if buffer_stock_rule not in ("band_scaled", "legacy_fixed_anchor"):
+            raise ValueError(f"buffer_stock_rule phai la 'band_scaled' hoac 'legacy_fixed_anchor', nhan '{buffer_stock_rule}'")
+        self.buffer_stock_rule: str = buffer_stock_rule
+        self.buffer_max_market_share: float = float(buffer_max_market_share)
+        self.buffer_price_band: float = float(buffer_price_band)
+        # He so EMA moi buoc tu chu ky ban ra: alpha = 1 - 0.5^(1/half_life).
+        self.buffer_reference_alpha: float = float(1.0 - 0.5 ** (1.0 / max(1e-6, float(buffer_reference_halflife_months))))
+        # Quy tac tai tro tro cap that nghiep (v0.36, KNOWN_PATHOLOGIES.md #30b) -- xem chu thich tai
+        # khoi "AN SINH XA HOI" o Section 4. "affordable" (mac dinh, DA SUA) | "legacy_gate" (logic CU).
+        if subsidy_funding_rule not in ("affordable", "legacy_gate"):
+            raise ValueError(f"subsidy_funding_rule phai la 'affordable' hoac 'legacy_gate', nhan '{subsidy_funding_rule}'")
+        self.subsidy_funding_rule: str = subsidy_funding_rule
+        # GIAM SAT NGAU NHIEN + SA THAI KHI BI PHAT HIEN LUOI (Shapiro & Stiglitz, 1984) -- v0.34,
+        # KNOWN_PATHOLOGIES.md #27. Xem chu thich day du tai Section 3 (noi ap dung).
+        #   shirking_monitor_prob = q: xac suat MOI THANG mot lao dong dang co viec bi giam sat va
+        #     (neu effort < shirking_effort_threshold) bi phat hien. =0.0 tai tao DUNG hanh vi CU
+        #     (effort khong co loi ich rieng -> chinh sach hoc effort ~ 0.1, #27).
+        #   shirking_effort_threshold = ebar: muc effort toi thieu "khong lam luoi".
+        #   effort_signal_noise_sigma: do lech chuan nhieu Gaussian trong tin hieu effort Firm quan
+        #     sat (Holmstrom, 1979). =0.0 -> tin hieu chinh xac.
+        self.shirking_monitor_prob: float = float(shirking_monitor_prob)
+        self.shirking_effort_threshold: float = float(shirking_effort_threshold)
+        self.effort_signal_noise_sigma: float = float(effort_signal_noise_sigma)
+        # DAU AN SA THAI VI LUOI (Gibbons & Katz, 1991, "Layoffs and Lemons", Journal of Labor
+        # Economics 9(4), 351-380 -- lao dong bi sa thai CA NHAN (khong phai dong cua nha may) bi
+        # thi truong suy ra la "lemon" nen kho tai viec lam hon): so thang nguoi bi sa thai vi lam
+        # luoi KHONG duoc tuyen lai. =0 tai tao hanh vi khong dau an (tuyen lai NGAY thang sau).
+        # HE SO TU DO HIEU CHINH -- Gibbons & Katz xac lap HUONG (dau an ton tai) chu KHONG cho so thang.
+        # LY DO TON TAI (do truc tiep 2026-09-27, KNOWN_PATHOLOGIES.md #27): thieu no, sa thai chi
+        # chiem ~1 buoc that nghiep (thi truong lao dong "khong ma sat" tuyen lai ngay) nen viec
+        # sa thai gan nhu vo hai -- muc giam sat q=0.05 KHONG du de luoi kem loi hon tuan thu.
+        self.shirker_rehire_lockout_months: int = int(shirker_rehire_lockout_months)
         # Xac suat dam phan lai luong Calvo-style moi buoc cho lao dong DA co viec (Taylor 1980;
         # Erceg, Henderson & Levin 2000) -- xem chu thich day du tai Section 3 (noi su dung).
         # =0.0 tai tao dung hanh vi CU (luong khoa vinh vien mot khi tuyen).
@@ -153,9 +201,13 @@ class RuleEngine:
             deltas[gov.agent_id]["executed_firm_tax"] = float(gov_act.values[1])
             worker_tax_rate = float(gov_act.values[0])
             firm_tax_rate = float(gov_act.values[1])
+            # Muc tro cap that nghiep = action[4] (v0.35, xem Government.decide + Section 4 "AN SINH XA HOI").
+            relief_level = float(gov_act.values[4]) if len(gov_act.values) > 4 else 0.40
         else:
             worker_tax_rate = gov.tax_rate_worker
             firm_tax_rate = gov.tax_rate_firm
+            relief_level = float(getattr(gov, "unemployment_relief_level", 0.40))
+        deltas[gov.agent_id]["executed_relief_level"] = relief_level
 
         # Mỗi Bank ra quyết định lãi suất/tín dụng ĐỘC LẬP (tham số chia sẻ qua
         # một policy "policy_bank" duy nhất, giống cách firm_*/emp_* chia sẻ
@@ -257,7 +309,11 @@ class RuleEngine:
             depreciation_rate = 0.005 + 0.015 * utilization
             overhead_cost = depreciation_rate * firm.capital_stock * 0.01
 
-            unemployed = [e for e in active_employees if e.agent_id not in claimed_workers]
+            # Loai nguoi dang chiu "dau an sa thai vi luoi" (Gibbons & Katz, 1991) khoi ung vien --
+            # xem RuleEngine.__init__ (shirker_rehire_lockout_months) va Section 3 (noi ghi dau an).
+            unemployed = [e for e in active_employees
+                          if e.agent_id not in claimed_workers
+                          and getattr(e, "hire_lockout_until", -1) <= timestep]
             unemployed.sort(key=lambda w: getattr(w, 'skill_level', 1.0), reverse=True)
 
             safety_reserve = overhead_cost + (current_wage_bill * 1.1)
@@ -375,6 +431,12 @@ class RuleEngine:
         firm_wage_bills: Dict[str, float] = {}
         firm_overheads: Dict[str, float] = {}
         worker_gross_incomes: Dict[str, float] = {e.agent_id: 0.0 for e in active_employees}
+        # Danh sach (firm_id, emp_id) lao dong bi PHAT HIEN lam luoi trong thang nay (Shapiro &
+        # Stiglitz, 1984 -- xem khoi giam sat ngay ben duoi vong lap luong). Viec sa thai thuc su
+        # duoc AP DUNG SAU khi thang nay da tinh xong san xuat/tro cap/luong (xem
+        # "AP DUNG SA THAI KHI BI PHAT HIEN LUOI" duoi khoi tro cap that nghiep) de tranh nguoi bi
+        # sa thai nhan CA luong lan san luong phi chinh thuc cua thang do.
+        shirkers_detected: List[Tuple[str, str]] = []
 
         for firm in active_firms:
             firm_workers = [
@@ -397,10 +459,49 @@ class RuleEngine:
 
             wage_bill = 0.0
             effective_l = 0.0
+            firm_worker_efforts: List[float] = []
 
             for emp in firm_workers:
                 emp_act = validated_actions.get(emp.agent_id)
                 effort = float(emp_act.values[0]) if emp_act is not None else 0.6
+                firm_worker_efforts.append(effort)
+
+                # GIAM SAT NGAU NHIEN + SA THAI KHI BI PHAT HIEN LUOI (v0.34, KNOWN_PATHOLOGIES.md #27).
+                #
+                # LOI DA SUA: truoc day effort chi xuat hien o 2 cho -- lam GIAM san luong cua firm
+                # (effective_l) va TRU nang luong/thoa dung cua chinh nguoi lao dong (Employee.
+                # calculate_reward: disutility_labor = effort^2) -- trong khi LUONG khong phu thuoc
+                # effort va khong co hau qua nao cho viec lam luoi. Ket qua: effort chi co CHI PHI
+                # ca nhan, khong co LOI ICH ca nhan => chinh sach hoc dung nghiem "effort ~ 0.1",
+                # cach ly duoc kenh nay gay tu vong x6.5, gia x10.7, GDP /5.3 (audit 2026-09-26,
+                # audits/2026-09-26/test_audit_findings.py::F1a/F1b). Day chinh la van de "moral
+                # hazard" ma Shapiro & Stiglitz (1984) mo hinh hoa -- gia thiet no khong duoc mo
+                # hinh hoa trong ban truoc, nen ket qua khong phai "bug tinh co" ma la HE QUA DUNG
+                # cua thiet ke thieu co che ky luat.
+                #
+                # Co che (Shapiro, C., & Stiglitz, J. E. (1984), "Equilibrium Unemployment as a
+                # Worker Discipline Device", American Economic Review 74(3), 433-444): moi thang
+                # moi lao dong co viec bi giam sat ngau nhien voi xac suat q; neu bi phat hien
+                # lam luoi (o day: effort < ebar, phien ban LIEN TUC hoa cua lua chon nhi phan
+                # e in {0, ebar} trong bai goc) thi bi SA THAI va roi vao pool that nghiep --
+                # chinh hau qua "mat viec = mat phan lai suat luong so voi that nghiep" tao ra dong
+                # co khong lam luoi (No-Shirking Condition). Thu hoi viec lam la dong co ky luat,
+                # KHONG phai chi phi cho Firm: Firm van ich ky (khong them chi phi xa hoi nao vao
+                # reward Firm, tuan thu quyet dinh thiet ke da chot -- xem CLAUDE.md).
+                #   q = shirking_monitor_prob (0.05), ebar = shirking_effort_threshold (0.5):
+                #   HE SO CAU TRUC TU DO HIEU CHINH -- Shapiro-Stiglitz KHONG cho gia tri so; 0.5 khop
+                #   effort trung binh cua policy ngau nhien (Uniform[0,1]) dung khi hieu chinh
+                #   mrpl_scale_constant, 0.05 = ky vong ~20 thang moi bi phat hien.
+                # Nguoi lao dong energy < 0.2 bi Employee.validate_action ep giam effort ve <= energy
+                # (khong du suc) -- KHONG coi la lam luoi (khong the tu chon), tranh vong xoay
+                # kiet suc -> sa thai -> kiet suc nang hon. Nguoi vua tuyen thang nay duoc mien
+                # (tranh vua nam trong hired_employees vua nam trong fired_employees cung buoc).
+                if (self.shirking_monitor_prob > 0.0
+                        and effort < self.shirking_effort_threshold
+                        and getattr(emp, "energy", 1.0) >= 0.2
+                        and emp.agent_id not in hired_this_step_ids
+                        and np.random.rand() < self.shirking_monitor_prob):
+                    shirkers_detected.append((firm.agent_id, emp.agent_id))
                 assigned_wage = deltas[emp.agent_id].get("wage", emp.wage)
 
                 # DAM PHAN LAI LUONG DINH KY (Wage Renegotiation) -- MOI (v0.28). Nguyen nhan
@@ -461,6 +562,12 @@ class RuleEngine:
                 # trần ở Section 4 vốn để cắt (xem chú thích indexed_price ở đầu hàm; phát hiện
                 # qua audit be/tests/test_env_contracts.py::test_price_indexation_loop_gain_equals_theta_above_ceiling).
                 wage = assigned_wage if assigned_wage > 0 else (indexed_price * 1.05)
+                if assigned_wage <= 0.0:
+                    # v0.36 (KNOWN_PATHOLOGIES.md #30a): ghi lai muc luong THUC TRA vao thuoc tinh wage de
+                    # trang thai/quan sat khop voi dong tien (truoc day nhanh nay tra luong nhung khong ghi,
+                    # thuoc tinh ket o 0 -> cong dam phan lai khong bao gio mo). Sau khi env.py gan luong luc
+                    # reset, nhanh nay chi con la luoi an toan cho moi duong tuyen dung tuong lai quen gan luong.
+                    deltas[emp.agent_id]["wage"] = wage
 
                 wage_bill += wage
                 worker_gross_incomes[emp.agent_id] += wage
@@ -473,6 +580,23 @@ class RuleEngine:
                 self._emit_event(EventType.WAGE_PAID, firm.agent_id, emp.agent_id, {"amount": round(wage, 1)}, timestep)
                 events_map[firm.agent_id].append(EventType.WAGE_PAID.value)
                 events_map[emp.agent_id].append(EventType.WAGE_PAID.value)
+
+            # TIN HIEU EFFORT CO NHIEU CUA FIRM (v0.34, KNOWN_PATHOLOGIES.md #27): Firm khong the
+            # quan sat chinh xac effort tung nguoi, chi thay mot tin hieu NHIEU ve effort trung
+            # binh cua luc luong lao dong (Holmstrom, B. (1979), "Moral Hazard and Observability",
+            # Bell Journal of Economics 10(1), 74-91 -- nguyen ly thong tin (informativeness
+            # principle): bat ky tin hieu nhieu nao ve hanh dong cua agent deu co gia tri cho
+            # principal). Duoc luu vao Firm.last_effort_signal (Firm.apply_result) va dua vao
+            # Firm.observe() chieu thu 14 o buoc SAU. effort_signal_noise_sigma la HE SO TU DO HIEU
+            # CHINH. Khong co lao dong -> 0.0 (khong co thong tin; headcount obs cung = 0).
+            if firm_worker_efforts:
+                effort_signal = float(np.mean(firm_worker_efforts))
+                if self.effort_signal_noise_sigma > 0.0:
+                    effort_signal += float(np.random.normal(0.0, self.effort_signal_noise_sigma))
+                effort_signal = float(np.clip(effort_signal, 0.0, 1.0))
+            else:
+                effort_signal = 0.0
+            deltas[firm.agent_id]["observed_effort_signal"] = effort_signal
 
             # self.mrpl_scale_constant AP DUNG O DAY (giong marginal_product o Section 2) de giu
             # dung quan he dao ham marginal_product = d(physical_q)/d(effective_l) -- xem chu
@@ -822,18 +946,58 @@ class RuleEngine:
         # bán quá tồn kho) -- không cần thêm logic chặn nào khác.
         eco_act = validated_actions.get(eco.agent_id)
         intervention_intensity = float(np.clip(eco_act.values[0], -1.0, 1.0)) if eco_act is not None else 0.0
-        buffer_intervention_base = SUBSISTENCE_BASKET_QTY * eco.initial_living_cost * max(1, len(active_employees))
-        nominal_intervention = intervention_intensity * buffer_intervention_base
+        requested_intervention_intensity = intervention_intensity
+        buffer_reference_price = float(getattr(eco, "buffer_reference_price", eco.initial_living_cost))
 
         buffer_buy_spend = 0.0
         buffer_sell_qty = 0.0
-        if nominal_intervention > 0.0:
-            buffer_buy_spend = min(nominal_intervention, eco.strategic_reserve_fund)
-            total_consumer_spending += buffer_buy_spend
-        elif nominal_intervention < 0.0:
-            desired_qty = abs(nominal_intervention) / max(0.5, eco.initial_living_cost)
-            buffer_sell_qty = min(desired_qty, eco.strategic_reserve_stock)
-            total_real_supply += buffer_sell_qty
+        if self.buffer_stock_rule == "legacy_fixed_anchor":
+            # --- LOGIC CU v0.24 (giu de tai hien KNOWN_PATHOLOGIES.md #31) ---
+            buffer_intervention_base = SUBSISTENCE_BASKET_QTY * eco.initial_living_cost * max(1, len(active_employees))
+            nominal_intervention = intervention_intensity * buffer_intervention_base
+            if nominal_intervention > 0.0:
+                buffer_buy_spend = min(nominal_intervention, eco.strategic_reserve_fund)
+                total_consumer_spending += buffer_buy_spend
+            elif nominal_intervention < 0.0:
+                desired_qty = abs(nominal_intervention) / max(0.5, eco.initial_living_cost)
+                buffer_sell_qty = min(desired_qty, eco.strategic_reserve_stock)
+                total_real_supply += buffer_sell_qty
+        else:
+            # --- v0.37 "band_scaled" (KNOWN_PATHOLOGIES.md #31) ---
+            # LOI DA SUA: quy mo can thiep cu = cuong do x initial_living_cost (HANG SO CO DINH luc reset) x dan
+            # so. Moc neo co dinh duoc chon co chu dich o v0.24 de cat vong lap gia->can thiep->gia, nhung khi
+            # giam phat (#30c) keo gia xuong 5x, moc neo tro nen lon 5x theo gia tri thuc: mot lenh mua ~500/buoc
+            # trong khi chi tieu sinh hoat ca nen kinh te ~100-120 -> gia 1.19->3.60 trong 6-10 buoc -> luong
+            # danh nghia thap va cung (Taylor 1980) mat suc mua -> lao dong khong co dem chet (seed 1 iter_40,
+            # tu vong tat dinh 3/6/6; ep Economy=0 -> 0/0/0). Dong thoi policy da hoc MUA ca khi gia da gap 3.
+            # Sua 2 phan (Claude Web + Opus, 2026-09-27):
+            # (a) QUY MO THEO THI TRUONG HIEN TAI (khong co moc neo tinh nao co the troi): mua <= kappa x chi
+            #     tieu HO GIA DINH cua chinh buoc nay (truoc G/bom cau/du tru dem); ban <= kappa x tong cung thuc
+            #     truoc can thiep. kappa = buffer_max_market_share (0.15) -- HE SO TU DO HIEU CHINH: tac dong
+            #     toi da len gia tuc thoi +-15%, sau lam tron Calvo (1-theta) ~ +-4.5%/buoc.
+            # (b) DAI GIA QUANH GIA THAM CHIEU DONG (price band -- dang thiet ke co che binh on gia duoc tong quan
+            #     trong Knudsen & Nash (1990); Newbery & Stiglitz (1981) cho ly thuyet du tru dem): CHI duoc mua
+            #     khi gia ky truoc < tham_chieu x (1 - band), CHI duoc ban khi > tham_chieu x (1 + band) -- ep
+            #     dung tinh PHAN CHU KY bat ke policy RL chon gi. Gia tham chieu = trung binh truot ham mu (EMA)
+            #     cua gia thi truong, ban ra buffer_reference_halflife_months (12) -- tu DI THEO gia nen khong
+            #     tro thanh mot moc neo tinh moi (dung yeu cau: khong "sua hang so tinh bang hang so tinh khac").
+            #     band (0.05) va chu ky ban ra (12 thang) la HE SO TU DO HIEU CHINH, khong suy tu trich dan.
+            # Ca hai chieu van tu gioi han boi quy/ton kho that. Economy KHONG quan sat gia tham chieu (obs giu
+            # 11 chieu) -- policy chi thay gia/lam phat hien hanh; ghi vao han che.
+            band = self.buffer_price_band
+            if intervention_intensity > 0.0 and not (expected_price < buffer_reference_price * (1.0 - band)):
+                intervention_intensity = 0.0
+            if intervention_intensity < 0.0 and not (expected_price > buffer_reference_price * (1.0 + band)):
+                intervention_intensity = 0.0
+            kappa = self.buffer_max_market_share
+            if intervention_intensity > 0.0:
+                buffer_buy_spend = min(intervention_intensity * kappa * max(0.0, household_consumer_spending),
+                                       eco.strategic_reserve_fund)
+                total_consumer_spending += buffer_buy_spend
+            elif intervention_intensity < 0.0:
+                buffer_sell_qty = min(abs(intervention_intensity) * kappa * max(0.0, total_real_supply),
+                                      eco.strategic_reserve_stock)
+                total_real_supply += buffer_sell_qty
 
         # CÂN BẰNG GIÁ CALVO (Calvo, 1983 Staggered Price Setting):
         # P*_t: Giá cân bằng Walras tức thời nếu 100% doanh nghiệp đổi giá
@@ -873,6 +1037,10 @@ class RuleEngine:
         deltas[eco.agent_id]["strategic_reserve_fund_delta"] = buffer_fund_delta
         deltas[eco.agent_id]["strategic_reserve_stock_delta"] = buffer_stock_delta
         deltas[eco.agent_id]["executed_intervention_intensity"] = intervention_intensity
+        deltas[eco.agent_id]["requested_intervention_intensity"] = requested_intervention_intensity
+        # Cap nhat gia tham chieu EMA SAU khi gia buoc nay da chot (dung cho buoc SAU) -- v0.37.
+        deltas[eco.agent_id]["buffer_reference_price"] = (
+            buffer_reference_price + self.buffer_reference_alpha * (market_clearing_price - buffer_reference_price))
 
         # PHÂN BỔ DOANH THU KHÉP KÍN 100% SFC (Godley & Lavoie, 2007)
         industrial_revenue_pool = total_consumer_spending * (total_industrial_output / max(1.0, total_real_supply))
@@ -924,7 +1092,24 @@ class RuleEngine:
         deltas[eco.agent_id]["capital_depreciation_cost"] = sum(firm_overheads.values())
 
         # AN SINH XÃ HỘI CÓ THỜI HẠN (Tránh Bẫy Phúc lợi - Welfare Trap)
+        #
+        # RANG BUOC NGAN SACH CUA TRO CAP (v0.36, KNOWN_PATHOLOGIES.md #30b). LOI DA SUA: truoc day
+        # tro cap chi duoc chi khi `gov.treasury > 1000.0` -- mot NGUONG TUYET DOI dat tu thoi Kho bac
+        # 1.000.000 (0.1% ngan sach) va KHONG duoc xem lai khi v0.35 ha Kho bac xuong 25.000 (luc do =
+        # 4% ngan sach). Do tren validation_v035/iter_90-100: Kho bac < 1000 o 81-85% so buoc -> tro
+        # cap THUC CHI = 0.00 o moi episode -> hanh dong action[4] cua Government vo hieu hoan toan.
+        # Nguoc lai, khi cong mo thi tro cap KHONG bi chan tren boi so du (co the chi vuot quy).
+        # Sua: bo nguong tuyet doi, thay bang RANG BUOC NGAN SACH DUNG NGHIA -- tong tro cap khong vuot
+        # so du Kho bac con lai SAU khi da tru chi mua hang G (Section 4C, cung bi chan boi so du) va
+        # phan bom cau duong (Section 4B) cua CUNG buoc. Nhat quan voi cach G da duoc rang buoc
+        # (`min(rho x thu ky truoc, Kho bac)`) va voi nguyen ly SFC "khong chi vuot quy, khong tu tao
+        # no/tien" (Godley & Lavoie, 2007). Khi thieu quy: chia DEU THEO TY LE cho moi nguoi du dieu
+        # kien (quy tac ty le -- proportional rule trong bai toan phan chia khi nguon luc khong du,
+        # O'Neill, B. (1982), "A problem of rights arbitration from the Talmud", Mathematical Social
+        # Sciences 2(4), 345-371) -- khong phu thuoc thu tu duyet danh sach.
+        # Tai hien logic CU: ScenarioConfig.subsidy_funding_rule = "legacy_gate".
         total_subsidies_spent = 0.0
+        pending_relief: List[Tuple[str, float]] = []
         for emp in unemployed_emps:
             streak = getattr(emp, "unemployed_streak", 0) + 1
             deltas[emp.agent_id]["unemployed_streak"] = streak
@@ -938,13 +1123,48 @@ class RuleEngine:
             current_cash_est = current_cash_est + max(
                 0.0, getattr(emp, "bank_deposit", 0.0) - deltas[emp.agent_id].get("pre_spend_withdrawal", 0.0)
             )
-            if current_cash_est < (0.8 * actual_living_cost) and gov.treasury > 1000.0:
+            legacy_gate_open = (self.subsidy_funding_rule != "legacy_gate") or (gov.treasury > 1000.0)
+            if current_cash_est < (0.8 * actual_living_cost) and legacy_gate_open:
                 # Trợ cấp giảm dần theo thời gian thất nghiệp (Benefit Cliff)
-                relief_amount = 0.40 * actual_living_cost if streak <= 3 else (0.15 * actual_living_cost if streak <= 6 else 0.0)
-                deltas[emp.agent_id]["cash_delta"] = deltas[emp.agent_id].get("cash_delta", 0.0) + relief_amount
-                total_subsidies_spent += relief_amount
+                # v0.35: muc 0.40 hardcode cu nay la ACTION[4] cua Government (relief_level); lich giam dan
+                # (thang 4-6 = 0.375x thang dau -- ty le 0.15/0.40 cu; sau 6 thang = 0) GIU NGUYEN, xem
+                # Government.decide() (Shavell & Weiss 1979). Mac dinh relief_level=0.40 khop hanh vi cu.
+                relief_amount = relief_level * actual_living_cost if streak <= 3 else (0.375 * relief_level * actual_living_cost if streak <= 6 else 0.0)
+                if relief_amount > 0.0:
+                    pending_relief.append((emp.agent_id, relief_amount))
 
+        # Ap rang buoc ngan sach (xem chu thich dau khoi). "legacy_gate" = hanh vi CU: chi du, khong chan tren.
+        desired_relief = sum(amt for _, amt in pending_relief)
+        if self.subsidy_funding_rule == "legacy_gate":
+            relief_scale = 1.0
+        else:
+            committed_this_step = government_purchases + max(0.0, demand_injection_effect)
+            available_for_relief = max(0.0, gov.treasury - committed_this_step)
+            relief_scale = min(1.0, available_for_relief / desired_relief) if desired_relief > 0.0 else 0.0
+        for emp_id, amt in pending_relief:
+            paid = amt * relief_scale
+            deltas[emp_id]["cash_delta"] = deltas[emp_id].get("cash_delta", 0.0) + paid
+            total_subsidies_spent += paid
         deltas[gov.agent_id]["subsidies_disbursed"] = total_subsidies_spent
+        deltas[gov.agent_id]["subsidies_requested"] = desired_relief
+
+        # AP DUNG SA THAI KHI BI PHAT HIEN LUOI (Shapiro & Stiglitz, 1984 -- xem chu thich tai khoi
+        # giam sat trong vong lap luong, Section 3). Chay SAU khi thang nay da chi luong/san xuat/
+        # tro cap that nghiep: nguoi bi phat hien van nhan luong thang do (da lam viec), nhung tu
+        # thang sau la nguoi that nghiep (wage=0, unemployed_streak khoi dong lai o 0, se tang o thang
+        # ke tiep) -- khong nhan dong thoi luong lan san luong phi chinh thuc/tro cap cung thang.
+        for shirker_firm_id, shirker_emp_id in shirkers_detected:
+            deltas[shirker_firm_id].setdefault("fired_employees", []).append(shirker_emp_id)
+            deltas[shirker_emp_id]["employed_by"] = None
+            deltas[shirker_emp_id]["wage"] = 0.0
+            deltas[shirker_emp_id]["unemployed_streak"] = 0
+            # Dau an: bi loai khoi danh sach ung vien cua MOI firm trong shirker_rehire_lockout_months
+            # thang ke tiep (thang t+1 ... t+L; hire_lockout_until la moc dau tien duoc phep tuyen lai).
+            deltas[shirker_emp_id]["hire_lockout_until"] = timestep + 1 + self.shirker_rehire_lockout_months
+            self._emit_event(EventType.FIRE, shirker_firm_id, shirker_emp_id,
+                              {"reason": "Shirking Detected (Shapiro-Stiglitz)"}, timestep)
+            events_map[shirker_firm_id].append(EventType.FIRE.value)
+            events_map[shirker_emp_id].append(EventType.FIRE.value)
 
         # Hồi phục thể lực sinh học có kẹp biên vật lý [0.0, max_energy] (Becker, 1965)
         for emp in active_employees:
