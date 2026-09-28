@@ -29,7 +29,10 @@ pham dung gia dinh nay, khong phai nhieu nho co the bo qua.
 Dung: python -m be.benchmark --episodes 10 --max-steps 240 [--checkpoint <path>]
 """
 import argparse
+import hashlib
+import json
 import os
+import subprocess
 import numpy as np
 
 from be.env import MacroEnvironment
@@ -38,6 +41,28 @@ from be.core.enums import LifeCycleStatus
 from be.agents.employee import Employee
 from be.agents.government import Government
 from be.baselines import BASELINE_NAMES, get_gov_baseline_action
+
+
+def provenance():
+    """(v0.37-tool3, yeu cau Claude Web 2026-09-28) Phien ban CHINH XAC cua cong cu + mo hinh sinh ra so lieu benchmark:
+    commit git, cac file chua commit trong be/ scenarios/, sha256 (16 ky tu dau) cua cac file quyet dinh ket qua --
+    de bang so lieu khoa luan truy nguoc duoc 'chay bang cong cu nao'."""
+    repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+    def git(*a):
+        try:
+            return subprocess.run(["git", *a], capture_output=True, text=True, cwd=repo).stdout.strip()
+        except Exception as exc:
+            return f"ERR {exc}"
+    files = ["be/benchmark.py", "be/baselines.py", "be/env.py", "be/rule_engine.py", "be/rllib_wrapper.py"]
+    sha = {}
+    for f in files:
+        try:
+            sha[f] = hashlib.sha256(open(os.path.join(repo, f), "rb").read()).hexdigest()[:16]
+        except OSError as exc:
+            sha[f] = f"ERR {exc}"
+    return dict(git_head=git("rev-parse", "HEAD"), git_dirty=git("status", "--porcelain", "--", "be", "scenarios").splitlines(),
+                sha256=sha)
 
 
 def parse_args():
@@ -81,6 +106,20 @@ def parse_args():
                     help="Lay mau hanh dong tu phan phoi policy (giong luc TRAIN) thay vi lay gia tri tat dinh. "
                          "Audit 2026-09-26: 2 che do cho ket qua khac han (170-270 vs 51-65 ca chet/episode o "
                          "iter_500) -- PHAI ghi ro che do nao dung khi bao cao.")
+    p.add_argument("--json-out", type=str, default=None,
+                    help="(v0.37-tool, 2026-09-28) Ghi so lieu TUNG EPISODE cua moi nhanh ra JSON -- can cho tong hop "
+                         "qua nhieu seed huan luyen (IQM + bootstrap phan tang, audits/final_run/aggregate_benchmark.py). "
+                         "Bang in ra man hinh khong doi.")
+    p.add_argument("--legacy-episode-seeding", action="store_true",
+                    help="(v0.37-tool) Hanh vi CU: chi np.random.seed(--seed) mot lan dau moi nhanh, cac episode sau "
+                         "dung trang thai RNG toan cuc da troi theo quy dao cua nhanh do -> CHI episode dau duoc ghep cap "
+                         "giua cac nhanh. Mac dinh MOI: episode thu i cua MOI nhanh reset(seed=--seed + i) -> cung dieu "
+                         "kien ban dau (common random numbers), so sanh ghep cap giua nhanh hop le.")
+    p.add_argument("--batched-inference", action="store_true",
+                    help="(v0.37-tool) Goi policy THEO LO moi buoc (algo.compute_actions, 1 lan/policy) thay vi 1 lan/tac tu "
+                         "(compute_single_action). CUNG preprocessor/filter(update=False)/unsquash cua RLlib, CUNG quan sat "
+                         "env.observe_agent() -- chi khac cach gom lo khi suy luan (tang toc). Tuong duong so hoc da kiem "
+                         "tren checkpoint that truoc khi dung (xem CLAUDE_HISTORY v0.37-tool).")
     return p.parse_args()
 
 
@@ -130,8 +169,9 @@ RL_AUX_SUFFIX = "+rl_aux"
 AUX_DIMS = slice(2, 5)  # [rho, demand_injection, relief] trong GOVERNMENT_ACT_SPACE (rllib_wrapper.py)
 
 
-def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_override=None):
-    obs, info = env.reset()
+def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_override=None, episode_seed=None,
+                batched=False):
+    obs, info = env.reset(seed=episode_seed)
     gdp_hist = []
     gini_hist = []
     unemp_hist = []
@@ -141,6 +181,7 @@ def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_over
     for t in range(max_steps):
         raw_state = env.get_raw_environment_state()
         actions = {}
+        pending = {}  # policy_id -> {agent_id: obs} (chi dung khi batched)
         for aid, agent in env.agents.items():
             if aid == env.gov.agent_id and gov_baseline_name != RL_LEARNED_GOV:
                 avg_wage = float(np.mean([e.wage for e in env.agents.values()
@@ -157,6 +198,10 @@ def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_over
                 # sat (NaN/Inf) cua env.observe_agent() ma luc TRAIN dung -> vi pham quy tac "train va simulate
                 # cung logic" (CLAUDE.md). Nay dung dung ham chung.
                 obs_vec = env.observe_agent(aid, raw_state)
+                if batched:
+                    pending.setdefault(policy_mapping(aid), {})[aid] = obs_vec
+                    actions[aid] = None  # giu thu tu chen giong env.agents; dien sau khi suy luan theo lo
+                    continue
                 act = algo.compute_single_action(obs_vec, policy_id=policy_mapping(aid), explore=explore)
                 actions[aid] = np.asarray(act, dtype=np.float32)
                 if aid == env.gov.agent_id:
@@ -164,6 +209,12 @@ def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_over
             else:
                 act = agent.decide(agent.observe(raw_state))
                 actions[aid] = act.values
+        for pid, obs_dict in pending.items():
+            batch_acts = algo.compute_actions(obs_dict, policy_id=pid, explore=explore)
+            for aid, act in batch_acts.items():
+                actions[aid] = np.asarray(act, dtype=np.float32)
+        if batched and algo is not None and gov_baseline_name == RL_LEARNED_GOV:
+            gov_actions.append(actions[env.gov.agent_id].copy())
 
         obs, rew, term, trunc, info = env.step(actions)
 
@@ -209,6 +260,7 @@ def main():
     print(f"\n{'Baseline':<18} {'Productivity(GDP)':>20} {'Equality(1-Gini)':>18} {'Eq x Prod':>12} {'Deaths/ep':>10} {'Unemp':>7}")
     print("-" * 89)
     results = {}
+    per_episode = {}
     idx = 0
     while idx < len(names_to_run):
         name = names_to_run[idx]
@@ -218,8 +270,11 @@ def main():
         gdp_all, gini_all, unemp_all, deaths_all, gov_acts_all = [], [], [], [], []
         override = aux_mean if name.endswith(RL_AUX_SUFFIX) else None
         for ep in range(args.episodes):
+            ep_seed = None if args.legacy_episode_seeding else args.seed + ep
             gdp_hist, gini_hist, unemp_hist, deaths, gov_acts = run_episode(env, algo, name, args.max_steps,
-                                                                             explore=args.explore, aux_override=override)
+                                                                             explore=args.explore, aux_override=override,
+                                                                             episode_seed=ep_seed,
+                                                                             batched=args.batched_inference)
             if len(gov_acts) > 0:
                 gov_acts_all.append(gov_acts)
             if len(gdp_hist) > 0:
@@ -235,11 +290,25 @@ def main():
         deaths_mean = float(np.mean(deaths_all)) if deaths_all else float("nan")
         unemp_mean = float(np.mean(unemp_all)) if unemp_all else float("nan")
         results[name] = (productivity, productivity_std, equality, equality_std, eq_x_prod, deaths_mean, unemp_mean)
+        per_episode[name] = dict(gdp=[float(x) for x in gdp_all], gini=[float(x) for x in gini_all],
+                                 unemp=[float(x) for x in unemp_all], deaths=[int(x) for x in deaths_all],
+                                 eq_x_prod_arm=float(eq_x_prod))
         print(f"{name:<18} {productivity:>13.2f}+/-{productivity_std:<5.2f} {equality:>11.3f}+/-{equality_std:<5.3f} {eq_x_prod:>12.2f} {deaths_mean:>10.1f} {unemp_mean:>7.3f}")
         if name == RL_LEARNED_GOV and gov_acts_all:
             aux_mean = np.concatenate(gov_acts_all, axis=0)[:, AUX_DIMS].mean(axis=0).astype(np.float32)
             print(f"{'':<18} (trung binh cong cu phu RL [rho, bom cau, tro cap] = {np.round(aux_mean, 3)} -> dung cho cac nhanh '{RL_AUX_SUFFIX}')")
             names_to_run += [b + RL_AUX_SUFFIX for b in BASELINE_NAMES]
+
+    if args.json_out:
+        with open(args.json_out, "w", encoding="utf-8") as f:
+            json.dump(dict(checkpoint=args.checkpoint, config=args.config, explore=bool(args.explore), seed=args.seed,
+                           episodes=args.episodes, max_steps=args.max_steps,
+                           episode_seeding="legacy" if args.legacy_episode_seeding else "paired",
+                           inference="batched" if args.batched_inference else "per_agent",
+                           provenance=provenance(),
+                           aux_mean=None if aux_mean is None else [float(x) for x in aux_mean],
+                           arms=per_episode), f, ensure_ascii=False, indent=1)
+        print(f"[BENCHMARK] Da ghi so lieu tung episode: {args.json_out}")
 
     print("\n[BENCHMARK] Luu y: neu khong truyen --checkpoint hop le, day CHUA phai so sanh")
     print("'RL da hoc' vs 'rule-based' that su -- moi tac tu khac Government deu dung heuristic,")
