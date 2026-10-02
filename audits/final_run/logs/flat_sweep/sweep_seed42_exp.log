@@ -1,0 +1,59 @@
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2026-10-02 18:24:45,697	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+2026-10-02 18:24:48,293	INFO worker.py:1781 -- Started a local Ray instance.
+2026-10-02 18:24:50,099	INFO trainable.py:583 -- Restored on 127.0.0.1 from checkpoint: Checkpoint(filesystem=local, path=be/checkpoint/final_v037_seed42/iter_100)
+Exception ignored in atexit callback: <function shutdown at 0x000001F02C0BF6D0>
+Traceback (most recent call last):
+  File "C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\_private\client_mode_hook.py", line 103, in wrapper
+    return func(*args, **kwargs)
+  File "C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\_private\worker.py", line 1870, in shutdown
+    _global_node.kill_all_processes(check_alive=False, allow_graceful=True)
+  File "C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\_private\node.py", line 1628, in kill_all_processes
+    self._kill_process_type(
+  File "C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\_private\node.py", line 1449, in _kill_process_type
+    self._kill_process_impl(
+  File "C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\_private\node.py", line 1501, in _kill_process_impl
+    process.terminate()
+  File "C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\_private\services.py", line 242, in terminate
+    self.send_signal(signal.CTRL_BREAK_EVENT)
+  File "C:\Users\piece\.conda\envs\gpt_eco\lib\subprocess.py", line 1579, in send_signal
+    os.kill(self.pid, signal.CTRL_BREAK_EVENT)
+SystemError: <built-in function kill> returned a result with an exception set
+[BENCHMARK] Da doc ScenarioConfig tu: scenarios/em_baseline.yaml (GHI DE toan bo --num-employees/--num-firms/--hard-max-firms/--initial-lending-rate/--initial-deposit-rate)
+[BENCHMARK] Da nap checkpoint: be/checkpoint/final_v037_seed42/iter_100
+[BENCHMARK] Che do policy: LAY MAU (explore=True, giong luc train)
+
+Baseline              Productivity(GDP)   Equality(1-Gini)    Eq x Prod  Deaths/ep   Unemp
+-----------------------------------------------------------------------------------------
+rl_learned                901.40+/-40.73       0.409+/-0.041       368.81        0.1   0.006
+                   (trung binh cong cu phu RL [rho, bom cau, tro cap] = [0.847 0.098 0.638] -> dung cho cac nhanh '+rl_aux')
+                   (trung binh CA 5 cong cu RL = [0.006 0.265 0.847 0.098 0.638] -> dung cho 'rl_mean_fixed')
+free_market+rl_aux        855.76+/-34.37       0.419+/-0.036       358.82        0.0   0.004
+rl_mean_fixed             894.73+/-40.41       0.407+/-0.040       364.53        0.0   0.006
+flat_pit0.10_cit0         865.65+/-35.83       0.278+/-0.049       241.03        0.0   0.005
+flat_pit0.20_cit0         869.12+/-45.45       0.234+/-0.024       203.67        0.3   0.006
+flat_pit0.30_cit0         863.87+/-43.34       0.217+/-0.041       187.73        8.8   0.011
+flat_pit0.50_cit0         722.96+/-68.71       0.204+/-0.024       147.36       47.3   0.015
+flat_pit0_cit0.10         872.29+/-38.23       0.412+/-0.044       359.07        0.1   0.006
+flat_pit0_cit0.20         887.00+/-53.33       0.404+/-0.047       358.12        0.3   0.005
+flat_pit0_cit0.30         901.73+/-52.85       0.376+/-0.036       338.88        0.0   0.007
+flat_pit0_cit0.50         947.45+/-54.06       0.367+/-0.054       347.69        0.0   0.007
+[BENCHMARK] Da ghi so lieu tung episode: audits/final_run/logs/flat_sweep/sweep_seed42_exp.json
+
+[BENCHMARK] Luu y: neu khong truyen --checkpoint hop le, day CHUA phai so sanh
+'RL da hoc' vs 'rule-based' that su -- moi tac tu khac Government deu dung heuristic,
+nen bang tren chi cho biet BAN THAN 3 bieu thue khac nhau the nao duoi CUNG mot moi
+truong heuristic co dinh, chua danh gia duoc gia tri gia tang cua RL.
+[BENCHMARK] Nhanh 'rl_learned': Government dung CHINH policy RL da hoc (khong ep baseline nao)
+-- day moi la phep so sanh RL-vs-rule-based that su theo dung cau hoi trung tam cua khoa luan.

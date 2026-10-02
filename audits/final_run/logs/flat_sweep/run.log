@@ -1,0 +1,15 @@
+BAT DAU 2026-10-02 18:08:24
+== seed 42 det bat dau 18:08:24 (da chay 0 s)
+== seed 42 det xong rc=0 18:24:39
+== seed 42 exp bat dau 18:24:39 (da chay 975 s)
+== seed 42 exp xong rc=0 18:42:24
+== seed 202 det bat dau 18:42:24 (da chay 2040 s)
+== seed 202 det xong rc=0 19:00:44
+== seed 202 exp bat dau 19:00:44 (da chay 3140 s)
+== seed 202 exp xong rc=0 19:19:07
+== seed 303 det bat dau 19:19:08 (da chay 4244 s)
+== seed 303 det xong rc=0 19:39:23
+== seed 303 exp bat dau 19:39:24 (da chay 5459 s)
+== seed 303 exp xong rc=0 20:00:10
+XONG 2026-10-02 20:00:10, tong 6706 s
+== seed 303 exp xong rc=0 20:01:47
