@@ -40,7 +40,7 @@ from be.scenario_config import ScenarioConfig
 from be.core.enums import LifeCycleStatus
 from be.agents.employee import Employee
 from be.agents.government import Government
-from be.baselines import BASELINE_NAMES, get_gov_baseline_action
+from be.baselines import BASELINE_NAMES, get_gov_baseline_action, parse_flat_arm
 
 
 def provenance():
@@ -120,6 +120,10 @@ def parse_args():
                          "(compute_single_action). CUNG preprocessor/filter(update=False)/unsquash cua RLlib, CUNG quan sat "
                          "env.observe_agent() -- chi khac cach gom lo khi suy luan (tang toc). Tuong duong so hoc da kiem "
                          "tren checkpoint that truoc khi dung (xem CLAUDE_HISTORY v0.37-tool).")
+    p.add_argument("--arms", type=str, default=None,
+                    help="(v0.37-sweep) Danh sach nhanh chay SAU rl_learned, cach nhau dau phay. Mac dinh (bo trong) = hanh vi cu: "
+                         "3 baseline + 3 nhanh +rl_aux. Ho tro them: 'rl_mean_fixed' (5 cong cu = TB hanh dong RL cung lan chay, co "
+                         "dinh) va 'flat_pit<a>_cit<b>' (thue phang co dinh; 3 cong cu phu = TB RL). Cac nhanh nay CAN --checkpoint.")
     return p.parse_args()
 
 
@@ -169,14 +173,26 @@ RL_AUX_SUFFIX = "+rl_aux"
 AUX_DIMS = slice(2, 5)  # [rho, demand_injection, relief] trong GOVERNMENT_ACT_SPACE (rllib_wrapper.py)
 
 
+RL_MEAN_FIXED = "rl_mean_fixed"
+
+
+def needs_rl_aux(name):
+    """Nhanh dung 3 cong cu phu = TB cua RL: '<baseline>+rl_aux' va moi nhanh quet thue phang."""
+    return name.endswith(RL_AUX_SUFFIX) or parse_flat_arm(name) is not None
+
+
 def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_override=None, episode_seed=None,
-                batched=False):
+                batched=False, full_override=None):
     obs, info = env.reset(seed=episode_seed)
     gdp_hist = []
     gini_hist = []
     unemp_hist = []
     gov_actions = []
     base_name = gov_baseline_name[:-len(RL_AUX_SUFFIX)] if gov_baseline_name.endswith(RL_AUX_SUFFIX) else gov_baseline_name
+    # (v0.37-sweep) dong tien tai khoa moi buoc, doc tu thuoc tinh Government CO SAN (government.py apply_result) -- khong them
+    # do dac vao mo hinh; bom cau: last_demand_injection_value = demand_injection_effect = demand_injection_cost (rule_engine 4B).
+    fiscal = dict(tax=0.0, fines=0.0, purchases=0.0, relief_paid=0.0, injection=0.0)
+    neg_wealth_steps = 0
 
     for t in range(max_steps):
         raw_state = env.get_raw_environment_state()
@@ -187,8 +203,11 @@ def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_over
                 avg_wage = float(np.mean([e.wage for e in env.agents.values()
                                            if isinstance(e, Employee) and e.status == LifeCycleStatus.ACTIVE and e.employed_by is not None])) \
                     if any(isinstance(e, Employee) and e.employed_by is not None for e in env.agents.values()) else env.eco.base_living_cost
-                gov_act = np.array(get_gov_baseline_action(base_name, avg_wage, env.eco.base_living_cost), dtype=np.float32)
-                if aux_override is not None:
+                if gov_baseline_name == RL_MEAN_FIXED:
+                    gov_act = np.array(full_override, dtype=np.float32).copy()
+                else:
+                    gov_act = np.array(get_gov_baseline_action(base_name, avg_wage, env.eco.base_living_cost), dtype=np.float32)
+                if aux_override is not None and gov_baseline_name != RL_MEAN_FIXED:
                     gov_act[AUX_DIMS] = aux_override
                 actions[aid] = gov_act
                 gov_actions.append(gov_act.copy())
@@ -223,11 +242,21 @@ def run_episode(env, algo, gov_baseline_name, max_steps, explore=False, aux_over
         gini_hist.append(float(env.gov.current_gini))
         emps = [a for a in env.agents.values() if isinstance(a, Employee) and a.status == LifeCycleStatus.ACTIVE]
         unemp_hist.append(float(np.mean([e.employed_by is None for e in emps])) if emps else 1.0)
+        fiscal["tax"] += float(env.gov.last_tax_collected)
+        fiscal["fines"] += float(env.gov.last_fines_collected)
+        fiscal["purchases"] += float(env.gov.last_purchase)
+        fiscal["relief_paid"] += float(env.gov.last_subsidies_paid)
+        fiscal["injection"] += float(env.gov.last_demand_injection_value)
+        if emps and min(e.cash + getattr(e, "bank_deposit", 0.0) for e in emps) < 0.0:
+            neg_wealth_steps += 1
 
         if trunc.get("__all__", False):
             break
 
-    return np.array(gdp_hist), np.array(gini_hist), np.array(unemp_hist), int(env.gov.dead_citizens_count), np.array(gov_actions)
+    extra = dict(fiscal, newborn_outflow=float(getattr(env, "treasury_outflow_newborn_episode", float("nan"))),
+                 neg_wealth_step_share=neg_wealth_steps / max(1, len(gdp_hist)))
+    return (np.array(gdp_hist), np.array(gini_hist), np.array(unemp_hist), int(env.gov.dead_citizens_count),
+            np.array(gov_actions), extra)
 
 
 def main():
@@ -253,8 +282,12 @@ def main():
     algo = build_algo(env_config, args.checkpoint)
 
     # Nhanh rl_learned chay TRUOC (khi co checkpoint) de lay trung binh 3 cong cu phu cho cac nhanh "+rl_aux".
-    names_to_run = ([RL_LEARNED_GOV] if algo is not None else []) + list(BASELINE_NAMES)
+    custom_arms = [a.strip() for a in args.arms.split(",") if a.strip()] if args.arms else None
+    if custom_arms is not None and algo is None and any(a == RL_MEAN_FIXED or needs_rl_aux(a) for a in custom_arms):
+        raise SystemExit("[BENCHMARK] --arms co nhanh can trung binh hanh dong RL nhung KHONG nap duoc --checkpoint -> dung.")
+    names_to_run = ([RL_LEARNED_GOV] if algo is not None else []) + (list(BASELINE_NAMES) if custom_arms is None else [])
     aux_mean = None
+    rl_full_mean = None
 
     print(f"[BENCHMARK] Che do policy: {'LAY MAU (explore=True, giong luc train)' if args.explore else 'TAT DINH (explore=False)'}")
     print(f"\n{'Baseline':<18} {'Productivity(GDP)':>20} {'Equality(1-Gini)':>18} {'Eq x Prod':>12} {'Deaths/ep':>10} {'Unemp':>7}")
@@ -268,13 +301,14 @@ def main():
         env = MacroEnvironment(**env_config)
         np.random.seed(args.seed)
         gdp_all, gini_all, unemp_all, deaths_all, gov_acts_all = [], [], [], [], []
-        override = aux_mean if name.endswith(RL_AUX_SUFFIX) else None
+        extras_all = []
+        override = aux_mean if needs_rl_aux(name) else None
         for ep in range(args.episodes):
             ep_seed = None if args.legacy_episode_seeding else args.seed + ep
-            gdp_hist, gini_hist, unemp_hist, deaths, gov_acts = run_episode(env, algo, name, args.max_steps,
-                                                                             explore=args.explore, aux_override=override,
-                                                                             episode_seed=ep_seed,
-                                                                             batched=args.batched_inference)
+            gdp_hist, gini_hist, unemp_hist, deaths, gov_acts, extra = run_episode(
+                env, algo, name, args.max_steps, explore=args.explore, aux_override=override, episode_seed=ep_seed,
+                batched=args.batched_inference, full_override=rl_full_mean)
+            extras_all.append(extra)
             if len(gov_acts) > 0:
                 gov_acts_all.append(gov_acts)
             if len(gdp_hist) > 0:
@@ -292,12 +326,15 @@ def main():
         results[name] = (productivity, productivity_std, equality, equality_std, eq_x_prod, deaths_mean, unemp_mean)
         per_episode[name] = dict(gdp=[float(x) for x in gdp_all], gini=[float(x) for x in gini_all],
                                  unemp=[float(x) for x in unemp_all], deaths=[int(x) for x in deaths_all],
-                                 eq_x_prod_arm=float(eq_x_prod))
+                                 eq_x_prod_arm=float(eq_x_prod),
+                                 **{k: [float(e[k]) for e in extras_all] for k in (extras_all[0] if extras_all else {})})
         print(f"{name:<18} {productivity:>13.2f}+/-{productivity_std:<5.2f} {equality:>11.3f}+/-{equality_std:<5.3f} {eq_x_prod:>12.2f} {deaths_mean:>10.1f} {unemp_mean:>7.3f}")
         if name == RL_LEARNED_GOV and gov_acts_all:
             aux_mean = np.concatenate(gov_acts_all, axis=0)[:, AUX_DIMS].mean(axis=0).astype(np.float32)
+            rl_full_mean = np.concatenate(gov_acts_all, axis=0).mean(axis=0).astype(np.float32)
             print(f"{'':<18} (trung binh cong cu phu RL [rho, bom cau, tro cap] = {np.round(aux_mean, 3)} -> dung cho cac nhanh '{RL_AUX_SUFFIX}')")
-            names_to_run += [b + RL_AUX_SUFFIX for b in BASELINE_NAMES]
+            print(f"{'':<18} (trung binh CA 5 cong cu RL = {np.round(rl_full_mean, 3)} -> dung cho '{RL_MEAN_FIXED}')")
+            names_to_run += ([b + RL_AUX_SUFFIX for b in BASELINE_NAMES] if custom_arms is None else custom_arms)
 
     if args.json_out:
         with open(args.json_out, "w", encoding="utf-8") as f:
@@ -307,6 +344,8 @@ def main():
                            inference="batched" if args.batched_inference else "per_agent",
                            provenance=provenance(),
                            aux_mean=None if aux_mean is None else [float(x) for x in aux_mean],
+                           rl_full_mean=None if rl_full_mean is None else [float(x) for x in rl_full_mean],
+                           arms_requested=custom_arms,
                            arms=per_episode), f, ensure_ascii=False, indent=1)
         print(f"[BENCHMARK] Da ghi so lieu tung episode: {args.json_out}")
 

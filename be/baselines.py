@@ -133,8 +133,24 @@ def fixed_rate_bank_action(lending_rate: float = 0.06, deposit_rate: float = 0.0
 
 BASELINE_NAMES = ["free_market", "us_federal", "saez"]
 
+# NHANH QUET THUE PHANG (v0.37-sweep, 2026-10-02, dang ky truoc: audits/final_run/PREREG_flat_sweep.md, commit 4e0327d).
+# Ten "flat_pit<a>_cit<b>": thue TNCN = a, thue DN = b, CO DINH theo thoi gian. 3 cong cu phu (rho, bom cau, tro cap) KHONG
+# dat o day -- benchmark.py ghi de bang TRUNG BINH hanh dong RL cung lan benchmark (giong nhanh "+rl_aux"); gia tri tam o
+# day [rho=1, bom cau=0, tro cap=0] chi la placeholder truoc khi ghi de. Day la cong cu DANH GIA, khong phai baseline hoc thuat.
+import re as _re
+_FLAT_RE = _re.compile(r"^flat_pit([0-9]*\.?[0-9]+)_cit([0-9]*\.?[0-9]+)$")
+
+
+def parse_flat_arm(name: str):
+    """Tra (thue TNCN, thue DN) neu `name` la nhanh quet thue phang, nguoc lai None."""
+    m = _FLAT_RE.match(name)
+    return (float(m.group(1)), float(m.group(2))) if m else None
+
 
 def get_gov_baseline_action(name: str, avg_monthly_wage: float, base_living_cost: float) -> np.ndarray:
+    flat = parse_flat_arm(name)
+    if flat is not None:
+        return np.array([flat[0], flat[1], 1.0, 0.0, 0.0], dtype=np.float32)
     if name == "free_market":
         return free_market_gov_action()
     if name == "us_federal":
