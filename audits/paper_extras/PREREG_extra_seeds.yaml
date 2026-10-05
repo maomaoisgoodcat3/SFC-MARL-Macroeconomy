@@ -1,0 +1,59 @@
+# DANG KY TRUOC — them seed huan luyen cho paper (A7.1). Viet 2026-10-06, TRUOC khi chay seed moi nao.
+# Trang thai: NGUOI DUNG DA DUYET 2026-10-06; commit + push len remote TRUOC khi chay seed moi nao (dieu kien Claude Web, 2026-10-06).
+# Bao cao thuc tap va khoa luan giu bo 3 seed (42, 202, 303); cac seed moi CHI phuc vu paper.
+
+model_code:
+  frozen_since_commit: ed57a19          # be/main.py, env.py, rule_engine.py, agents/, rllib_wrapper.py, scenario_config.py, scenarios/ khong doi tu day
+  verified_by: "git diff --stat ed57a19 HEAD -- <cac file tren> = rong (2026-10-06)"
+  scenario: scenarios/em_baseline.yaml
+  train_command: >-
+    python -m be.main --mode train --config scenarios/em_baseline.yaml --train-iters 100 --num-workers 4
+    --train-batch-size 4000 --minibatch-size 256 --checkpoint-freq 10 --checkpoint-dir be/checkpoint
+    --scenario-name final_v037_seed<S> --seed <S>
+  same_as_existing_seeds: [42, 202, 303]
+
+seeds:
+  ordered_list: [404, 505, 606, 707, 808, 909]   # co dinh truoc; chay DUNG thu tu nay
+  planned: 6
+  minimum: 4
+  schedule:                                       # 2 seed/ngay, nghi may qua dem (nguoi dung, 2026-10-06)
+    "2026-10-07": [404, 505]
+    "2026-10-08": [606, 707]
+    "2026-10-09": [808, 909]
+  stopping_rule: >-
+    Dung THEO LICH, khong theo ket qua: chay theo thu tu danh sach trong cac khung ngay tren; het lich thi dung voi so
+    seed da hoan thanh (toi thieu 4). Khong bo seed nao vi ket qua; khong xem ket qua benchmark cua seed moi truoc khi
+    ket thuc lich. Loi chuong trinh/hong may (khong phai ket qua xau) -> chay lai DUNG seed do o khung ke tiep, ghi vao nhat ky.
+  gate_policy: >-
+    Cong iter 40 (audits/final_run/gate_eval.py, 7 dieu kien, che do split va original) chi de BAO CAO, KHONG dung huan
+    luyen: seed rot cong iter 40 VAN huan luyen den iter 100 va VAN duoc tinh (tranh chon mau theo ket qua). Bao cao ca
+    hai che do cong cho moi seed.
+
+evaluation:
+  checkpoint: iter_100 only
+  episodes_per_arm: 10
+  episode_seeds: "42 + i, i = 0..9 (ghep cap dieu kien ban dau giua cac nhanh)"
+  policy_modes: [deterministic, explore]
+  arms: [rl_learned, free_market, us_federal, saez, free_market+rl_aux, us_federal+rl_aux, saez+rl_aux, rl_mean_fixed,
+         flat_pit0.10_cit0, flat_pit0.20_cit0, flat_pit0.30_cit0, flat_pit0.50_cit0,
+         flat_pit0_cit0.10, flat_pit0_cit0.20, flat_pit0_cit0.30, flat_pit0_cit0.50]
+  tool: >-
+    MAC DINH: be/benchmark.py tai commit 371799e (gan tag bench-v1). NEU A7.4 duoc trien khai va dang ky truoc TRUOC khi
+    danh gia seed moi: danh gia TAT CA seed (3 cu + moi) bang ca bench-v1 va bench-v2; bao cao ca hai.
+  welfare_metric: "Eq×Prod moi episode = TB_buoc(GDP thuc) × (1 − TB_buoc(Gini)); Gini = Gini cu cua mo hinh (thuoc do chinh)"
+
+primary_estimate:
+  contrast: "rl_learned − free_market, hieu ghep cap theo episode"
+  modes: [deterministic, explore]
+  intervals:
+    - "bootstrap 2 cap seed -> episode, 10 000 lan, rng(0) (audits/final_run/aggregate_benchmark.py::hier_boot)"
+    - "t-interval tren trung binh theo seed (df = so seed − 1)"
+  report_also: ["RL − free_market+rl_aux", "RL − rl_mean_fixed", "RL − us_federal", "RL − saez", "RL − flat_pit0_cit0.30", "RL − flat_pit0_cit0.50"]
+  report_rules: >-
+    Bao cao moi seed (ke ca rot cong), moi nhanh, ca hai che do; so lieu theo tung seed + gop; khong chon tap con seed;
+    neu ket qua lam yeu cau chuyen, van bao nguyen van.
+
+known_caveats:
+  - "Che do lay mau khong ghep cap nhieu hanh dong giua nhanh voi bench-v1 (KNOWN_PATHOLOGIES #36)"
+  - "Baseline la thue phang quy doi (#34); thuong Firm co thuong quan so (#35)"
+  - "Thoi gian ~5.5 gio/seed (seed 303: 2026-10-01); cong iter 40 + 100 chay SAU huan luyen, khong song song"
