@@ -83,3 +83,28 @@ threat_to_validity: >-
   thuoc do do (Goodhart). Neu RL hon us_federal duoi thuoc cu nhung khong hon duoi thuoc moi, nguyen nhan co the la RL toi uu theo thuoc cu, khong
   nhat thiet mo hinh sai; neu ket qua ben qua cac thuoc thi lap luan manh hon. Dua vao Threats chuong 5; sua tin hieu huan luyen thuoc Phan 2.
 report_rules: "bao cao moi seed, moi nhanh, moi thuoc do, ca hai che do; khong chay lai tru loi chuong trinh; ket qua bao nguyen van"
+
+amendment_2026-10-07_rng_pairing:   # SUA DOI CO NGAY — commit TRUOC khi sua ma va TRUOC moi lan chay v2 that
+  date: "2026-10-07"
+  status: "NGUOI DUNG DUYET (huong B) 2026-10-07. CHUA co du lieu that nao cua v2 duoc xem (chi smoke 2 episode x 8 buoc de kiem pipeline)."
+  replaces: "changes.a_rng_pairing"
+  reason: >-
+    Gieo torch MOT lan dau episode chi ghep cap nhieu den khi chuoi goi RNG lech: Government chi lay mau policy o nhanh rl_learned
+    (baseline ep hanh dong) nen moi lan goi sau do cua cac policy khac bi lech so voi baseline ngay tu buoc dau.
+  new_rule: >-
+    Che do lay mau: truoc MOI lan suy luan cua MOI policy o MOI buoc, torch.manual_seed(K), K = 15 ky tu hex dau cua
+    sha256("seed|episode|buoc|policy_id|stt_lan_goi_trong_buoc") (stt = 0 voi suy luan theo lo). Che do tat dinh: KHONG gieo gi.
+    Nhieu cua moi policy o moi buoc vi vay giong nhau giua cac nhanh, bat ke nhanh co lay mau Government hay khong.
+  rng_separation: "Moi truong (env.py, rule_engine.py, agents/) chi dung np.random toan cuc; khong dung torch hay random cua Python (grep 2026-10-07) -> gieo torch khong doi dong luc moi truong."
+  limits: >-
+    Van la ghep cap MOT PHAN: suy luan theo lo gan nhieu theo VI TRI trong lo; khi so tac tu song khac nhau giua nhanh (chet, sinh,
+    firm vao/ra) vi tri lech va nhieu theo tung tac tu lech dan. Khong mo ta dinh tinh "da ghep cap"; chi bao con so o variance_reduction.
+  checks_before_real_run:   # kiem tren checkpoint that, episode ngan; khong dat -> khong chay that
+    - "tat dinh: v2 trung v1 tung so (gdp, gini, unemp, deaths, cac dong tien) — giu nguyen"
+    - "lay mau, HAI nhanh giong het (rl_learned chay hai lan): quy dao giong het tung so"
+    - "lay mau, rl_learned vs us_federal: hanh dong cua MOI tac tu khong phai Government o buoc dau giong het nhau"
+  variance_reduction:
+    metric: >-
+      Voi moi seed va moi so sanh (rl_learned − nhanh X), do lech chuan qua 10 episode cua hieu ghep cap Eq×Prod (thuoc do chinh) o
+      che do lay mau: SD_v2 so voi SD_v1 (JSON bench-v1 da co). Bao ty so SD_v2/SD_v1 theo tung seed × so sanh + trung vi; ty so > 1
+      cung bao nguyen van. Khong hua truoc muc giam.
