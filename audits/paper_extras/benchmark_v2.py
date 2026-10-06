@@ -3,7 +3,9 @@ bench-v2 (A7.4) — dang ky truoc: audits/paper_extras/PREREG_A74_bench_v2.yaml 
 
 Thiet ke: KHONG sua be/benchmark.py (bench-v1, tag -> 371799e). File nay goi lai NGUYEN VAN be.benchmark.run_episode (cung logic
 moi nhanh, cung thu tu nhanh, cung np.random.seed(seed) dau moi nhanh, cung reset(seed=seed+i)) va chi them:
-  (a) gieo lai bo sinh so torch truoc MOI episode cua MOI nhanh: torch.manual_seed(seed + i)  (KNOWN_PATHOLOGIES #36);
+  (a) ghep cap nhieu lay mau hanh dong giua cac nhanh (KNOWN_PATHOLOGIES #36) — SUA DOI 2026-10-07 (PREREG amendment, commit
+      452fb00): truoc MOI lan suy luan cua MOI policy o MOI buoc (che do lay mau), torch.manual_seed(K(seed, episode, buoc,
+      policy, stt)) — xem TorchPairing. Che do tat dinh: khong gieo gi. (--torch-seeding episode = cach cu, chi de doi chung);
   (b) bo ghi so do sau MOI env.step (boc env.step, khong doi hanh vi): G_P cua Raffinetti, Siletti & Vernizzi (2015) tren
       tai san / tai san rong / tieu dung + chan doan tai san am. Thuoc do CHINH van la env.gov.current_gini (Gini cu cua mo hinh).
 => o che do tat dinh, cac cot cua v1 (gdp, gini, unemp, deaths, ...) phai TRUNG v1 tung so (kiem khi chay that).
@@ -83,6 +85,56 @@ def self_test():
         g = gini_p(y)
         assert -1e-12 <= g <= 1.0 + 1e-12, f"G_P ngoai [0,1]: {g}"
     return True
+
+
+# --------------------------------------------------------------------------------------------- ghep cap nhieu torch
+class TorchPairing:
+    """Boc algo.compute_actions / algo.compute_single_action (v1 goi ca hai bang tu khoa policy_id=, explore=).
+    Khi explore=True: torch.manual_seed(K) voi K = 15 hex dau sha256("seed|episode|buoc|policy_id|stt"), stt = so lan policy
+    do da duoc goi trong buoc (0 voi suy luan theo lo) -> nhieu cua moi policy o moi buoc giong nhau giua cac nhanh, bat ke nhanh
+    co lay mau Government hay khong. Khi explore=False: khong lam gi (che do tat dinh trung v1 tung bit).
+    Kiem them: dem so lan goi lam doi trang thai np.random (RNG cua moi truong) — phai = 0, neu khac thi gieo/lay mau cua
+    RLlib dang cham vao dong luc moi truong."""
+
+    def __init__(self, algo, seed, mode="step_policy"):
+        self.seed, self.mode = int(seed), mode
+        self.ep, self.rec = 0, None
+        self._counts, self._count_key = {}, None
+        self.seeded_calls = 0
+        self.np_state_changed_calls = 0
+        self.batch_log = None  # dat = {} de ghi (episode, buoc, policy, stt) -> thu tu id tac tu trong lo (chan doan ghep cap)
+        algo.compute_actions = self._wrap(algo.compute_actions)
+        algo.compute_single_action = self._wrap(algo.compute_single_action)
+
+    def key(self, policy_id):
+        t = self.rec.t if self.rec is not None else -1
+        if self._count_key != (self.ep, t):
+            self._counts, self._count_key = {}, (self.ep, t)
+        n = self._counts.get(policy_id, 0)
+        self._counts[policy_id] = n + 1
+        return int(hashlib.sha256(f"{self.seed}|{self.ep}|{t}|{policy_id}|{n}".encode()).hexdigest()[:15], 16)
+
+    def _wrap(self, fn):
+        def wrapped(*a, **kw):
+            if not kw.get("explore"):
+                return fn(*a, **kw)
+            if self.mode == "step_policy":
+                pid = kw.get("policy_id")
+                if pid is None:
+                    raise RuntimeError("TorchPairing: thieu policy_id (v1 luon truyen bang tu khoa)")
+                k = self.key(pid)
+                torch.manual_seed(k)
+                self.seeded_calls += 1
+                if self.batch_log is not None and a and isinstance(a[0], dict):
+                    self.batch_log[(self.ep, self.rec.t if self.rec is not None else -1, pid,
+                                    self._counts[pid] - 1)] = list(a[0].keys())
+            st = np.random.get_state()
+            out = fn(*a, **kw)
+            st2 = np.random.get_state()
+            if st[2] != st2[2] or not np.array_equal(st[1], st2[1]):
+                self.np_state_changed_calls += 1
+            return out
+        return wrapped
 
 
 # --------------------------------------------------------------------------------------------- bo ghi theo buoc
@@ -216,6 +268,8 @@ def parse_args():
     p.add_argument("--batched-inference", action="store_true")
     p.add_argument("--arms", type=str, default=None, help="giong be/benchmark.py --arms (bo trong = 3 baseline + 3 +rl_aux)")
     p.add_argument("--json-out", type=str, required=True)
+    p.add_argument("--torch-seeding", choices=["step_policy", "episode"], default="step_policy",
+                   help="step_policy = theo sua doi 2026-10-07 (mac dinh); episode = cach cu (seed+i moi episode), chi de doi chung")
     p.add_argument("--self-test-only", action="store_true", help="chi chay 3 test dang ky truoc roi thoat")
     return p.parse_args()
 
@@ -236,6 +290,7 @@ def main():
     algo = v1.build_algo(env_config, args.checkpoint)
     if algo is None:
         raise SystemExit(f"[{TOOL_VERSION}] KHONG nap duoc checkpoint -> dung (v2 chi dung cho checkpoint that).")
+    pairing = TorchPairing(algo, args.seed, mode=args.torch_seeding)
 
     # Thu tu nhanh + cach lay TB hanh dong RL: CHEP DUNG be/benchmark.py::main (v1) de tai lap.
     custom_arms = [a.strip() for a in args.arms.split(",") if a.strip()] if args.arms else None
@@ -245,7 +300,7 @@ def main():
     per_episode = {}
 
     print(f"[{TOOL_VERSION}] Che do policy: {'LAY MAU (explore)' if args.explore else 'TAT DINH'}; "
-          f"torch.manual_seed(seed + i) truoc moi episode")
+          f"gieo torch: {args.torch_seeding}")
     print(f"\n{'Nhanh':<22} {'GDP':>8} {'1-Gini':>7} {'1-GPw':>7} {'1-GPnet':>8} {'1-GPc':>7} {'%buoc am':>9} {'k/N':>6}")
     idx = 0
     while idx < len(names_to_run):
@@ -253,12 +308,15 @@ def main():
         idx += 1
         env = MacroEnvironment(**env_config)
         rec = StepRecorder(env)
+        pairing.rec = rec
         np.random.seed(args.seed)  # giong v1
         override = aux_mean if v1.needs_rl_aux(name) else None
         cols = {}
         gov_acts_all = []
         for ep in range(args.episodes):
-            torch.manual_seed(args.seed + ep)  # (a) ghep cap nhieu lay mau hanh dong giua cac nhanh (KNOWN_PATHOLOGIES #36)
+            pairing.ep = ep
+            if args.torch_seeding == "episode":
+                torch.manual_seed(args.seed + ep)  # cach cu (truoc sua doi 2026-10-07) — chi de doi chung
             rec.new_episode()
             gdp_hist, gini_hist, unemp_hist, deaths, gov_acts, extra = v1.run_episode(
                 env, algo, name, args.max_steps, explore=args.explore, aux_override=override, episode_seed=args.seed + ep,
@@ -288,13 +346,16 @@ def main():
     with open(args.json_out, "w", encoding="utf-8") as f:
         json.dump(dict(tool=TOOL_VERSION, prereg=PREREG, checkpoint=args.checkpoint, config=args.config,
                        explore=bool(args.explore), seed=args.seed, episodes=args.episodes, max_steps=args.max_steps,
-                       episode_seeding="paired", torch_seeding="per_episode seed+i",
+                       episode_seeding="paired", torch_seeding=args.torch_seeding, prereg_amendment="452fb00",
+                       torch_seeded_calls=pairing.seeded_calls, np_state_changed_by_inference=pairing.np_state_changed_calls,
                        inference="batched" if args.batched_inference else "per_agent",
                        provenance=v1.provenance(), argv=sys.argv,
                        sha256_before=sha_before, sha256_after=sha_after, sha256_match=(sha_before == sha_after),
                        aux_mean=None if aux_mean is None else [float(x) for x in aux_mean],
                        rl_full_mean=None if rl_full_mean is None else [float(x) for x in rl_full_mean],
                        arms_requested=custom_arms, arms=per_episode), f, ensure_ascii=False, indent=1)
+    if pairing.np_state_changed_calls:
+        print(f"[{TOOL_VERSION}] CANH BAO: {pairing.np_state_changed_calls} lan suy luan lam doi np.random (RNG moi truong)!")
     print(f"[{TOOL_VERSION}] Da ghi: {args.json_out} (sha256 truoc/sau trung: {sha_before == sha_after})")
 
 
