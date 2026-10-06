@@ -1,0 +1,14 @@
+== NGAY BAT DAU 2026-10-06 11:57:12 commit 84d3d8a seeds: 404 505
+== seed 404 train bat dau 2026-10-06 11:57:12
+== seed 404 train xong rc=0 2026-10-06 16:50:28
+== seed 505 train bat dau 2026-10-06 16:50:28
+== seed 505 train xong rc=0 2026-10-06 22:25:03
+== seed 404 cong iter 40 bat dau 2026-10-06 22:25:03
+== seed 404 cong iter 40 xong rc=0 GATE_RESULT: PASS 2026-10-06 22:31:08
+== seed 404 cong iter 100 bat dau 2026-10-06 22:31:08
+== seed 404 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-06 22:36:12
+== seed 505 cong iter 40 bat dau 2026-10-06 22:36:13
+== seed 505 cong iter 40 xong rc=0 GATE_RESULT: PASS 2026-10-06 22:41:35
+== seed 505 cong iter 100 bat dau 2026-10-06 22:41:35
+== seed 505 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-06 22:46:07
+== NGAY XONG 2026-10-06 22:46:07

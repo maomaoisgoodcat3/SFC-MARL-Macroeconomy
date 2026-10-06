@@ -1,0 +1,31 @@
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2026-10-06 22:36:16,976	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+2026-10-06 22:36:19,547	INFO worker.py:1781 -- Started a local Ray instance.
+2026-10-06 22:36:21,326	INFO trainable.py:583 -- Restored on 127.0.0.1 from checkpoint: Checkpoint(filesystem=local, path=be/checkpoint/final_v037_seed505/iter_40)
+checkpoint: be/checkpoint/final_v037_seed505/iter_40
+
+=== CONG KIEM TRA (6 dieu kien dang ky truoc) ===
+1 effort: TB=0.822, ty le <0.5=3.5% (nguong <=15%), histogram 10 bin=[143, 230, 711, 1969, 5572, 12664, 23622, 39043, 89144, 73880] -> DAT
+2 wage=0 theo cua so [(0, 30), (30, 60), (60, 120), (120, 180), (180, 240)]: max qua cac episode = [0.0, 0.0, 0.0, 0.0, 0.0] % -> DAT
+3 tu vong: tat dinh [0, 0, 0], lay mau [0, 0, 0, 0, 0, 0, 0, 1, 0, 0] (trung vi 0.0), ly do {'Kiệt quệ sinh học / Nợ cùng quẫn': 1}
+  tu kiem bo phan loai: 1203 ca tuyen that, 0 ca vi pham vi tu tuyen duoc -> HOP LE
+  phan loai (tach tuoi gia): chua tung co viec tat dinh [0, 0, 0] / lay mau [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; trong do #32 CO CHE (khong bao gio tuyen duoc) tat dinh [0, 0, 0] / lay mau [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; CON LAI tat dinh [0, 0, 0] / lay mau [0, 0, 0, 0, 0, 0, 0, 1, 0, 0]; tuoi gia [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  che do original -> DAT; che do split (#32 <= 6.0/episode) -> DAT; DUNG CHO KET LUAN: split -> DAT
+4 do nhay Government max|d action| p5->p95: {'wtax': 0.011, 'ftax': 0.278, 'rho': 0.121, 'inj': 0.018, 'relief': 0.114}; so cong cu > 0.05: 3 -> DAT
+5 SFC (co tru no cong): lech max=2.86e-10 -> DAT
+6 births/buoc max=0.296, sinh khan cap TB=0.00 -> DAT
+7 tro cap khong bi chan: 896 buoc co nguoi du dieu kien / 3120 buoc; vi pham min(yeu cau, Kho bac con lai)=0; bi chan du con tien=0; tong yeu cau=904.8, tong thuc chi=902.7 -> DAT
+
+KET LUAN CONG: DAT CA 7
+GATE_RESULT: PASS

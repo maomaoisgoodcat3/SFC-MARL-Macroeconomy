@@ -1,0 +1,104 @@
+{
+ "checkpoint": "be/checkpoint/final_v037_seed404/iter_100",
+ "c3_mode": "split",
+ "passed": true,
+ "conditions": {
+  "effort": true,
+  "wage0": true,
+  "deaths": true,
+  "deaths_original": true,
+  "deaths_split": true,
+  "gov_sensitivity": true,
+  "sfc": true,
+  "births": true,
+  "relief": true
+ },
+ "effort_mean": 0.7226744356574121,
+ "effort_low_share": 0.0021460081858865124,
+ "deaths_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_exp": [
+  0,
+  2,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_never_employed_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_structural_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_structural_exp": [
+  0,
+  2,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_other_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_other_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "classifier_hire_check": [
+  912,
+  0
+ ],
+ "c3_structural_cap": 6.0,
+ "provenance": {
+  "git_head": "84d3d8a9db802583eabc196855857e4ebde7dd0d",
+  "git_dirty": [
+   "?? audits/paper_extras/PREREG_A74_bench_v2.yaml",
+   "?? audits/paper_extras/extra_seeds/",
+   "?? be/checkpoint/final_v037_seed404/",
+   "?? be/checkpoint/final_v037_seed505/"
+  ],
+  "sha256": {
+   "audits/final_run/gate_eval.py": "eba87a403c06b6e9",
+   "be/env.py": "b5cc51d3ac6df87c",
+   "be/rule_engine.py": "658038e9c9a0ac05",
+   "be/rllib_wrapper.py": "46e604ee634f8763",
+   "scenarios/em_baseline.yaml": "bcbb523bca15a62d"
+  }
+ },
+ "gov_sens": {
+  "wtax": 0.0,
+  "ftax": 0.16282054781913757,
+  "rho": 0.0,
+  "inj": 0.13126331567764282,
+  "relief": 0.1914370357990265
+ },
+ "sfc_max": 3.6430503058682007e-10,
+ "births_max": 0.30416666666666664
+}
