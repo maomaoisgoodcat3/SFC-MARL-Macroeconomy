@@ -1,0 +1,85 @@
+# DANG KY TRUOC — A7.4: cong cu danh gia bench-v2 (ghep cap nhieu lay mau + thuoc do bat binh dang thay the).
+# Viet 2026-10-06, sua 2026-10-07 sau khi doc ban goc Raffinetti et al. (2015) (TRUOC khi viet ma v2, TRUOC khi co so lieu v2).
+# Trang thai: NGUOI DUNG DA DUYET 2026-10-07. Commit + push len remote TRUOC khi chay v2. Khong sua mo hinh, khong train lai.
+
+tool:
+  v1: "be/benchmark.py tai tag bench-v1 (commit 371799e) — KHONG sua de, giu nguyen; so v1 la phan tich do nhay"
+  v2: "audits/paper_extras/benchmark_v2.py (file MOI, goi lai ham cua be/benchmark.py); gan tag bench-v2 khi chot"
+  integrity: "ghi sha256 be/env.py, be/rule_engine.py, cac checkpoint dung truoc va sau moi lan chay v2; phai trung"
+
+changes:
+  a_rng_pairing: >-
+    Truoc MOI episode cua MOI nhanh: gieo lai bo sinh so ngau nhien cua torch bang (seed_goc + i), i = so thu tu episode,
+    giong nhau giua cac nhanh -> nhieu lay mau hanh dong duoc ghep cap (KNOWN_PATHOLOGIES #36). Moi truong van reset(seed=42+i).
+    Khong hua truoc muc thu hep khoang tin cay; chi bao cao sau khi do (dieu kien 6 cua Claude Web).
+  b_inequality_metrics:
+    primary: >-
+      Gini cu cua mo hinh (rule_engine.py:1750-1768): chuan hoa theo N (khong phai N−1); tinh tien w − min + 1e-5 CHI khi co
+      tai san am. THUOC DO CHINH, khong doi. (Docstring o do trich Raffinetti 2015 la SAI — phep tinh tien khong co trong bai.)
+    G_P_definition: >-
+      Raffinetti, Siletti & Vernizzi (2015), Stat Methods Appl 24(3):507–521, doi 10.1007/s10260-014-0293-4, Muc 3.2, Eq. (5) va
+      dinh nghia G_P ngay sau: G_P = Σ_i Σ_j |Y_i − Y_j| / [2 (N−1) (T⁺ + T⁻)], T⁺ = Σ max(0,Y_i), T⁻ = |Σ min(0,Y_i)|; ∈ [0,1].
+      Dung ban N HUU HAN (khop Bang 3 cua bai: 0.5556 / 1 / 0.8346). KHONG dung GiniWegNeg::Gini_RSV (R, CRAN): ban do chia
+      cho (T⁺+T⁻)/N, tuc ban tiem can, cho 0.5000 / 0.9000 / 0.7511 tren cung 3 vi du (= G_P·(N−1)/N) — ban nhap truoc cua
+      file nay lay nham cong thuc R. Voi du lieu khong am: G_P = Gini_N × N/(N−1) (≈ +2% khi N ≈ 50) — v2 lech v1 ca khi
+      khong ai am, la binh thuong. T⁺ + T⁻ = 0 (moi gia tri = 0) -> G_P = 0.
+    robustness:   # cung MOT cong thuc G_P cho moi bien
+      - name: gp_wealth
+        definition: "G_P tren tai san (cash + bank_deposit) cua Employee con song — cung bien voi thuoc do chinh, KHONG tinh tien"
+      - name: gp_net_wealth
+        definition: "G_P tren tai san rong = cash + bank_deposit − debt"
+      - name: gp_consumption
+        definition: >-
+          G_P tren last_consumption (employee.py:220, = executed_consumption cua buoc) cua Employee con song. CHON tieu dung, KHONG
+          chon thu nhap: thu nhap gop (worker_gross_incomes, rule_engine.py:433) chi la bien cuc bo, khong xuat ra deltas/agent ->
+          muon do phai sua code dong bang. Chi MOT bien dong (tranh nhieu so sanh). Reward Employee dung log tieu dung
+          (employee.py:270) nen bien nay co y nghia phuc loi.
+    per_arm_diagnostics:   # ghi moi buoc, bao cao TB + phan phoi theo nhanh
+      - "k = so nguoi tai san am; ty le k/N"
+      - "T⁻/T⁺ va |min|/mean (do sau)"
+      - "bias_condition: T⁺ + N²·c > (2N−1)·T⁻ voi c = |min| + 1e-5 — dieu kien CHINH XAC de Gini tinh tien < G_P (suy tu
+         cong thuc cua mo hinh, xem directional_prediction). Bao % buoc dieu kien dung; va % buoc k > N²/(2N−1) (= 25.25 khi N = 50)"
+      - "N thuc te moi buoc (so Employee con song; khong co dinh 50)"
+      - "% buoc co min < 0 (da co o v1)"
+  welfare_variants: "Eq×Prod_M = TB_buoc(GDP thuc) × (1 − TB_buoc(Gini_M)) cho M ∈ {primary, gp_wealth, gp_net_wealth, gp_consumption}"
+
+tests:   # chay truoc moi lan dung v2
+  - "G_P tren 3 kich ban Bang 1 cua bai = 0.5556 / 1.0000 / 0.8346 (sai so 1e-4)"
+  - "du lieu khong am ngau nhien: G_P = Gini_mo_hinh × N/(N−1) (sai so 1e-9)"
+  - "moi gia tri = 0 -> 0; mot gia tri -> 0; ket qua ∈ [0,1] tren du lieu ngau nhien co gia tri am"
+
+directional_prediction: >-
+  Suy dien (2026-10-07): Gini mo hinh khi co am = SS / [2N(T + N·c)], G_P = SS / [2(N−1)(T⁺+T⁻)], SS = Σ_iΣ_j|Y_i−Y_j|,
+  T = T⁺ − T⁻. Gini tinh tien < G_P  <=>  T⁺ + N²·c > (2N−1)·T⁻. Vi T⁻ ≤ k·c, dieu kien du: k ≤ N²/(2N−1) (k ≤ 25 khi N = 50).
+  Kiem so: k = 25 -> 0.5000 < 0.5102; k = 26 -> 0.5200 > 0.4898. DU DOAN (dang ky truoc, co the sai): neu bias_condition dung
+  o phan lon buoc cua us_federal va saez, thi 1 − Gini cua hai nhanh nay bi v1 THOI PHONG -> duoi gp_wealth, hieu
+  Eq×Prod (RL − us_federal) va (RL − saez) LON HON duoi thuoc chinh. Neu sai (hieu nho hon, hoac dieu kien khong dung) ->
+  bao cao nguyen van la du doan sai. Cau "so sanh duy nhat ben" (ha giong) giu nguyen den khi co so.
+
+runs:
+  seeds: "TAT CA seed co checkpoint iter_100 theo PREREG_extra_seeds.yaml (42, 202, 303 + cac seed moi) — cung mot phien ban v2"
+  arms: "16 nhanh nhu PREREG_extra_seeds.yaml (7 benchmark + rl_mean_fixed + 8 nhanh thue phang)"
+  modes: [deterministic, explore]
+  episodes: "10, reset seed 42+i"
+  schedule: "KHONG chay song song voi huan luyen (dieu kien 8); chay thu (1 episode) chi khi may ranh"
+
+conclusion_stands_criteria:   # chot TRUOC khi co so; ap dung rieng cho tung thuoc do M va tung che do
+  contrasts: ["rl_learned − free_market", "rl_learned − us_federal", "rl_learned − saez",
+              "rl_learned − free_market+rl_aux", "rl_learned − rl_mean_fixed"]
+  sign: "dau cua hieu ghep cap TB (Eq×Prod_M) cua tung so sanh co giong thuoc do chinh khong"
+  significance: "CI95 (bootstrap 2 cap) chua 0 hay khong — co doi so voi thuoc do chinh khong"
+  ordering: "thu tu TB Eq×Prod_M cua 7 nhanh benchmark co giong thuoc do chinh khong (bao Kendall tau)"
+  flat_tax_curve: "H2 (giam doc thue TNCN) va hinh dang lat cat thue DN cua PREREG_flat_sweep co giu khong"
+
+disagreement_rule: >-
+  Neu DAU cua bat ky so sanh nao o tren dao chieu giua thuoc do chinh va mot thuoc do ben (o bat ky che do nao), luan va paper CHI duoc
+  viet "ket qua phu thuoc vao thuoc do bat binh dang" cho so sanh do, KHONG chon thuoc thuan loi. Bao cao day du moi thuoc do.
+measure_status: >-
+  G_P la THUOC THU HAI, khong phai "thuoc dung hon": la mot de xuat trong tai lieu, bai goc chi kiem bang 3 kich ban gia va du lieu
+  SHIW 2012 (Muc 3.1, 5). Chuan hoa theo kich ban phan cuc giu nguyen T⁺, T⁻ (Muc 3.2). Thuoc do chinh van la Gini cu cua mo hinh.
+citation_note: "Trich theo Muc + so phuong trinh (Muc 3.2, Eq. 5; Bang 3); ban PDF dang co la ban online-first, khong co so trang tap chi"
+threat_to_validity: >-
+  Reward cua Government dung CHINH Gini cu (0.02·(1−Gini)·GDP thuc; be/agents/government.py:327-336, reward_mode eq_x_prod) nen planner RL duoc huan luyen de toi da
+  thuoc do do (Goodhart). Neu RL hon us_federal duoi thuoc cu nhung khong hon duoi thuoc moi, nguyen nhan co the la RL toi uu theo thuoc cu, khong
+  nhat thiet mo hinh sai; neu ket qua ben qua cac thuoc thi lap luan manh hon. Dua vao Threats chuong 5; sua tin hieu huan luyen thuoc Phan 2.
+report_rules: "bao cao moi seed, moi nhanh, moi thuoc do, ca hai che do; khong chay lai tru loi chuong trinh; ket qua bao nguyen van"
