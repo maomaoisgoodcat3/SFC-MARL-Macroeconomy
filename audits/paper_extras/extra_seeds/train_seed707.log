@@ -1,0 +1,312 @@
+[INFO] 2026-10-07 17:51:40,302 - [SYSTEM] Initializing Institutional AI Economist Training Engine...
+[INFO] 2026-10-07 17:51:40,308 - [SYSTEM] Loaded ScenarioConfig from: scenarios/em_baseline.yaml (ghi de moi flag calibration/quy mo rieng le)
+[INFO] 2026-10-07 17:51:40,308 - [CONFIG] Scenario: final_v037_seed707 | Employees: 50 | Firms: 5 | Banks: 1 | Max Steps: 240
+[INFO] 2026-10-07 17:51:40,308 - [CONFIG] Batch Size: 4000 | Total Iterations: 100 | Checkpoint Freq: 10
+2026-10-07 17:51:42,701	INFO worker.py:1781 -- Started a local Ray instance.
+[INFO] 2026-10-07 17:51:44,928 - [SYSTEM] Compiling PyTorch Neural Architectures...
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+[INFO] 2026-10-07 17:51:52,643 - [SYSTEM] No existing checkpoint identified. Training starting from iteration 0.
+[36m(RolloutWorker pid=16892)[0m 2026-10-07 17:51:57,077	WARNING env_runner_v2.py:158 -- More than 6753 observations in 100 env steps for episode 993422925327051934 are buffered in the sampler. If this is more than you expected, check that that you set a horizon on your environment correctly and that it terminates at some point. Note: In multi-agent environments, `rollout_fragment_length` sets the batch size based on (across-agents) environment steps, not the steps of individual agents, which can result in unexpectedly large batches.
+2026-10-07 17:52:48,484	WARNING deprecation.py:50 -- DeprecationWarning: `_get_slice_indices` has been deprecated. This will raise an error in the future!
+[TRAIN] Iter:    1 | Reward:    366.93 | Emp: 75.2 | Unemp: 21.1% | Firm: 13.9 | GDP:     142.91 | Gini: 0.43 | Infl:  0.00% | Wage:   1.9 | Treasury:        10 | Reserves:  502444.6 | NPL:     0.1 ( 0.0%) | Births: 0.19 | Deaths/ep:  12.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:    2 | Reward:    377.32 | Emp: 74.6 | Unemp: 20.7% | Firm: 13.8 | GDP:     139.48 | Gini: 0.41 | Infl:  0.00% | Wage:   1.9 | Treasury:       -19 | Reserves:  502357.7 | NPL:     0.2 ( 0.0%) | Births: 0.22 | Deaths/ep:  10.6 | EmBirths/ep:   0.0
+[TRAIN] Iter:    3 | Reward:    373.34 | Emp: 75.7 | Unemp: 19.8% | Firm: 13.8 | GDP:     140.71 | Gini: 0.42 | Infl:  0.00% | Wage:   1.9 | Treasury:       -28 | Reserves:  502308.8 | NPL:     0.3 ( 0.1%) | Births: 0.25 | Deaths/ep:   9.4 | EmBirths/ep:   0.0
+[TRAIN] Iter:    4 | Reward:    367.06 | Emp: 76.3 | Unemp: 19.0% | Firm: 13.8 | GDP:     140.82 | Gini: 0.42 | Infl:  0.00% | Wage:   1.9 | Treasury:       -17 | Reserves:  502262.2 | NPL:     0.3 ( 0.1%) | Births: 0.25 | Deaths/ep:   8.9 | EmBirths/ep:   0.0
+[TRAIN] Iter:    5 | Reward:    361.05 | Emp: 76.8 | Unemp: 18.5% | Firm: 14.0 | GDP:     142.26 | Gini: 0.41 | Infl:  0.00% | Wage:   1.9 | Treasury:       -35 | Reserves:  502215.1 | NPL:     0.3 ( 0.1%) | Births: 0.25 | Deaths/ep:   8.6 | EmBirths/ep:   0.0
+┌───────────────────────── Training Monitor — Iter 5 ─────────────────────────┐
+│ Tiến độ          5/100 iter (5.0%)                                          │
+│ Tốc độ           190.2s/iter (TB 5 iter gần nhất)                           │
+│ Đã chạy          15m50s                                                     │
+│ ETA tới target   5h01m                                                      │
+│ Phần cứng        CPU 59.6%  |  RAM 88.0%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↓ Đang giảm (dốc -2.2/iter)                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:    6 | Reward:    368.45 | Emp: 76.6 | Unemp: 17.5% | Firm: 14.1 | GDP:     144.47 | Gini: 0.41 | Infl:  0.00% | Wage:   1.9 | Treasury:       -35 | Reserves:  502208.9 | NPL:     0.2 ( 0.1%) | Births: 0.25 | Deaths/ep:   8.6 | EmBirths/ep:   0.0
+[TRAIN] Iter:    7 | Reward:    363.76 | Emp: 77.0 | Unemp: 16.6% | Firm: 14.2 | GDP:     146.00 | Gini: 0.41 | Infl:  0.00% | Wage:   1.9 | Treasury:       -55 | Reserves:  502196.9 | NPL:     0.2 ( 0.0%) | Births: 0.26 | Deaths/ep:   7.8 | EmBirths/ep:   0.0
+[TRAIN] Iter:    8 | Reward:    354.59 | Emp: 77.5 | Unemp: 15.5% | Firm: 14.5 | GDP:     148.13 | Gini: 0.41 | Infl:  0.00% | Wage:   1.9 | Treasury:       -46 | Reserves:  502211.4 | NPL:     0.2 ( 0.0%) | Births: 0.25 | Deaths/ep:   7.4 | EmBirths/ep:   0.0
+[TRAIN] Iter:    9 | Reward:    364.65 | Emp: 77.5 | Unemp: 14.8% | Firm: 14.6 | GDP:     149.00 | Gini: 0.41 | Infl:  0.00% | Wage:   1.8 | Treasury:       -46 | Reserves:  502203.6 | NPL:     0.1 ( 0.0%) | Births: 0.27 | Deaths/ep:   7.3 | EmBirths/ep:   0.0
+[TRAIN] Iter:   10 | Reward:    360.94 | Emp: 77.4 | Unemp: 14.1% | Firm: 15.0 | GDP:     151.10 | Gini: 0.41 | Infl:  0.00% | Wage:   1.8 | Treasury:       -57 | Reserves:  502236.0 | NPL:     0.1 ( 0.0%) | Births: 0.24 | Deaths/ep:   6.9 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 10 ─────────────────────────┐
+│ Tiến độ          10/100 iter (10.0%)                                        │
+│ Tốc độ           191.2s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          31m51s                                                     │
+│ ETA tới target   4h46m                                                      │
+│ Phần cứng        CPU 59.3%  |  RAM 91.9%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↓ Đang giảm (dốc -1.4/iter)                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 18:23:44,536 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_10
+[TRAIN] Iter:   11 | Reward:    363.85 | Emp: 77.4 | Unemp: 13.0% | Firm: 15.3 | GDP:     153.77 | Gini: 0.41 | Infl:  0.00% | Wage:   1.8 | Treasury:       -38 | Reserves:  502306.6 | NPL:     0.1 ( 0.0%) | Births: 0.23 | Deaths/ep:   6.6 | EmBirths/ep:   0.0
+[TRAIN] Iter:   12 | Reward:    365.62 | Emp: 78.2 | Unemp: 12.2% | Firm: 15.7 | GDP:     157.14 | Gini: 0.41 | Infl:  0.00% | Wage:   1.8 | Treasury:       -39 | Reserves:  502356.7 | NPL:     0.1 ( 0.0%) | Births: 0.23 | Deaths/ep:   5.7 | EmBirths/ep:   0.0
+[TRAIN] Iter:   13 | Reward:    378.53 | Emp: 78.5 | Unemp: 11.1% | Firm: 15.8 | GDP:     156.77 | Gini: 0.41 | Infl:  0.00% | Wage:   1.8 | Treasury:       -38 | Reserves:  502376.8 | NPL:     0.1 ( 0.0%) | Births: 0.22 | Deaths/ep:   5.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   14 | Reward:    405.26 | Emp: 78.5 | Unemp: 10.4% | Firm: 15.9 | GDP:     157.29 | Gini: 0.41 | Infl:  0.00% | Wage:   1.8 | Treasury:       -37 | Reserves:  502489.4 | NPL:     0.1 ( 0.0%) | Births: 0.20 | Deaths/ep:   4.6 | EmBirths/ep:   0.0
+[TRAIN] Iter:   15 | Reward:    413.35 | Emp: 78.5 | Unemp:  9.7% | Firm: 16.1 | GDP:     157.33 | Gini: 0.41 | Infl:  0.00% | Wage:   1.8 | Treasury:       -28 | Reserves:  502633.1 | NPL:     0.1 ( 0.0%) | Births: 0.16 | Deaths/ep:   4.0 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 15 ─────────────────────────┐
+│ Tiến độ          15/100 iter (15.0%)                                        │
+│ Tốc độ           194.3s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          48m14s                                                     │
+│ ETA tới target   4h35m                                                      │
+│ Phần cứng        CPU 60.6%  |  RAM 93.7%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +5.0/iter)                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   16 | Reward:    437.55 | Emp: 78.8 | Unemp:  9.1% | Firm: 15.9 | GDP:     157.03 | Gini: 0.41 | Infl:  0.00% | Wage:   1.7 | Treasury:       -24 | Reserves:  502730.6 | NPL:     0.1 ( 0.0%) | Births: 0.19 | Deaths/ep:   3.6 | EmBirths/ep:   0.0
+[TRAIN] Iter:   17 | Reward:    456.50 | Emp: 79.0 | Unemp:  8.5% | Firm: 15.6 | GDP:     155.88 | Gini: 0.42 | Infl:  0.00% | Wage:   1.7 | Treasury:       -24 | Reserves:  502839.3 | NPL:     0.1 ( 0.0%) | Births: 0.17 | Deaths/ep:   3.2 | EmBirths/ep:   0.0
+[TRAIN] Iter:   18 | Reward:    484.82 | Emp: 78.8 | Unemp:  7.6% | Firm: 14.9 | GDP:     151.93 | Gini: 0.43 | Infl:  0.00% | Wage:   1.7 | Treasury:        -7 | Reserves:  502882.8 | NPL:     0.1 ( 0.0%) | Births: 0.13 | Deaths/ep:   2.8 | EmBirths/ep:   0.0
+[TRAIN] Iter:   19 | Reward:    512.22 | Emp: 78.8 | Unemp:  7.0% | Firm: 14.4 | GDP:     151.11 | Gini: 0.44 | Infl:  0.00% | Wage:   1.7 | Treasury:        29 | Reserves:  502911.9 | NPL:     0.1 ( 0.0%) | Births: 0.16 | Deaths/ep:   2.4 | EmBirths/ep:   0.0
+[TRAIN] Iter:   20 | Reward:    535.45 | Emp: 79.4 | Unemp:  6.1% | Firm: 13.6 | GDP:     152.12 | Gini: 0.46 | Infl:  0.00% | Wage:   1.6 | Treasury:        41 | Reserves:  502871.9 | NPL:     0.0 ( 0.0%) | Births: 0.16 | Deaths/ep:   2.0 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 20 ─────────────────────────┐
+│ Tiến độ          20/100 iter (20.0%)                                        │
+│ Tốc độ           192.6s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          1h03m                                                      │
+│ ETA tới target   4h16m                                                      │
+│ Phần cứng        CPU 61.7%  |  RAM 90.6%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +19.9/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 18:55:50,728 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_20
+[TRAIN] Iter:   21 | Reward:    563.54 | Emp: 79.9 | Unemp:  5.1% | Firm: 13.2 | GDP:     153.92 | Gini: 0.47 | Infl:  0.00% | Wage:   1.6 | Treasury:        66 | Reserves:  502869.0 | NPL:     0.0 ( 0.0%) | Births: 0.15 | Deaths/ep:   1.7 | EmBirths/ep:   0.0
+[TRAIN] Iter:   22 | Reward:    598.08 | Emp: 80.1 | Unemp:  4.3% | Firm: 12.7 | GDP:     155.53 | Gini: 0.48 | Infl:  0.00% | Wage:   1.6 | Treasury:        90 | Reserves:  502854.1 | NPL:     0.0 ( 0.0%) | Births: 0.15 | Deaths/ep:   1.3 | EmBirths/ep:   0.0
+[TRAIN] Iter:   23 | Reward:    635.39 | Emp: 80.1 | Unemp:  3.7% | Firm: 12.3 | GDP:     155.62 | Gini: 0.49 | Infl:  0.00% | Wage:   1.5 | Treasury:       108 | Reserves:  502853.1 | NPL:     0.0 ( 0.0%) | Births: 0.17 | Deaths/ep:   1.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   24 | Reward:    680.81 | Emp: 80.6 | Unemp:  3.2% | Firm: 12.0 | GDP:     157.42 | Gini: 0.50 | Infl:  0.00% | Wage:   1.5 | Treasury:       131 | Reserves:  502915.4 | NPL:     0.0 ( 0.0%) | Births: 0.18 | Deaths/ep:   0.6 | EmBirths/ep:   0.0
+[TRAIN] Iter:   25 | Reward:    719.69 | Emp: 81.2 | Unemp:  2.9% | Firm: 11.8 | GDP:     159.65 | Gini: 0.49 | Infl:  0.00% | Wage:   1.5 | Treasury:       149 | Reserves:  502893.7 | NPL:     0.0 ( 0.0%) | Births: 0.17 | Deaths/ep:   0.5 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 25 ─────────────────────────┐
+│ Tiến độ          25/100 iter (25.0%)                                        │
+│ Tốc độ           191.0s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          1h20m                                                      │
+│ ETA tới target   3h58m                                                      │
+│ Phần cứng        CPU 59.3%  |  RAM 86.3%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +31.2/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   26 | Reward:    745.86 | Emp: 80.9 | Unemp:  2.9% | Firm: 11.6 | GDP:     156.93 | Gini: 0.47 | Infl:  0.00% | Wage:   1.5 | Treasury:       159 | Reserves:  502856.6 | NPL:     0.0 ( 0.0%) | Births: 0.19 | Deaths/ep:   0.3 | EmBirths/ep:   0.0
+[TRAIN] Iter:   27 | Reward:    774.75 | Emp: 81.4 | Unemp:  2.8% | Firm: 11.2 | GDP:     156.23 | Gini: 0.47 | Infl:  0.00% | Wage:   1.5 | Treasury:       162 | Reserves:  502773.5 | NPL:     0.0 ( 0.0%) | Births: 0.19 | Deaths/ep:   0.3 | EmBirths/ep:   0.0
+[TRAIN] Iter:   28 | Reward:    801.79 | Emp: 81.7 | Unemp:  2.7% | Firm: 10.9 | GDP:     155.56 | Gini: 0.47 | Infl:  0.00% | Wage:   1.5 | Treasury:       174 | Reserves:  502708.1 | NPL:     0.0 ( 0.0%) | Births: 0.17 | Deaths/ep:   0.3 | EmBirths/ep:   0.0
+[TRAIN] Iter:   29 | Reward:    837.86 | Emp: 82.4 | Unemp:  2.7% | Firm: 10.3 | GDP:     155.77 | Gini: 0.46 | Infl:  0.00% | Wage:   1.5 | Treasury:       189 | Reserves:  502549.5 | NPL:     0.0 ( 0.0%) | Births: 0.17 | Deaths/ep:   0.2 | EmBirths/ep:   0.0
+[TRAIN] Iter:   30 | Reward:    864.58 | Emp: 82.6 | Unemp:  2.4% | Firm: 9.8 | GDP:     154.95 | Gini: 0.44 | Infl:  0.00% | Wage:   1.5 | Treasury:       212 | Reserves:  502424.7 | NPL:     0.0 ( 0.0%) | Births: 0.21 | Deaths/ep:   0.2 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 30 ─────────────────────────┐
+│ Tiến độ          30/100 iter (30.0%)                                        │
+│ Tốc độ           192.6s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          1h36m                                                      │
+│ ETA tới target   3h44m                                                      │
+│ Phần cứng        CPU 60.0%  |  RAM 86.3%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +33.5/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 19:27:56,419 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_30
+[TRAIN] Iter:   31 | Reward:    899.10 | Emp: 82.5 | Unemp:  2.1% | Firm: 9.3 | GDP:     153.24 | Gini: 0.44 | Infl:  0.00% | Wage:   1.4 | Treasury:       212 | Reserves:  502310.8 | NPL:     0.0 ( 0.0%) | Births: 0.22 | Deaths/ep:   0.2 | EmBirths/ep:   0.0
+[TRAIN] Iter:   32 | Reward:    937.79 | Emp: 83.3 | Unemp:  1.8% | Firm: 8.9 | GDP:     155.80 | Gini: 0.44 | Infl:  0.00% | Wage:   1.4 | Treasury:       226 | Reserves:  502213.7 | NPL:     0.0 ( 0.0%) | Births: 0.22 | Deaths/ep:   0.2 | EmBirths/ep:   0.0
+[TRAIN] Iter:   33 | Reward:    966.52 | Emp: 83.1 | Unemp:  1.6% | Firm: 8.5 | GDP:     155.19 | Gini: 0.43 | Infl:  0.00% | Wage:   1.4 | Treasury:       244 | Reserves:  502152.4 | NPL:     0.0 ( 0.0%) | Births: 0.24 | Deaths/ep:   0.2 | EmBirths/ep:   0.0
+[TRAIN] Iter:   34 | Reward:    998.25 | Emp: 82.9 | Unemp:  1.5% | Firm: 8.2 | GDP:     153.67 | Gini: 0.42 | Infl:  0.00% | Wage:   1.4 | Treasury:       254 | Reserves:  502076.7 | NPL:     0.0 ( 0.0%) | Births: 0.27 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   35 | Reward:   1029.42 | Emp: 83.2 | Unemp:  1.4% | Firm: 8.0 | GDP:     153.56 | Gini: 0.41 | Infl:  0.00% | Wage:   1.4 | Treasury:       262 | Reserves:  502041.2 | NPL:     0.0 ( 0.0%) | Births: 0.26 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 35 ─────────────────────────┐
+│ Tiến độ          35/100 iter (35.0%)                                        │
+│ Tốc độ           192.5s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          1h52m                                                      │
+│ ETA tới target   3h28m                                                      │
+│ Phần cứng        CPU 61.9%  |  RAM 91.1%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +32.0/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   36 | Reward:   1085.27 | Emp: 83.1 | Unemp:  1.3% | Firm: 7.4 | GDP:     151.81 | Gini: 0.41 | Infl:  0.00% | Wage:   1.4 | Treasury:       262 | Reserves:  501907.2 | NPL:     0.0 ( 0.0%) | Births: 0.24 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   37 | Reward:   1111.63 | Emp: 83.2 | Unemp:  1.3% | Firm: 7.4 | GDP:     151.99 | Gini: 0.40 | Infl:  0.00% | Wage:   1.4 | Treasury:       260 | Reserves:  501906.4 | NPL:     0.0 ( 0.0%) | Births: 0.21 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   38 | Reward:   1130.57 | Emp: 82.9 | Unemp:  1.2% | Firm: 7.4 | GDP:     151.07 | Gini: 0.40 | Infl:  0.00% | Wage:   1.4 | Treasury:       268 | Reserves:  501912.4 | NPL:     0.0 ( 0.0%) | Births: 0.20 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   39 | Reward:   1168.27 | Emp: 83.2 | Unemp:  1.1% | Firm: 7.2 | GDP:     150.59 | Gini: 0.40 | Infl:  0.00% | Wage:   1.4 | Treasury:       250 | Reserves:  501840.1 | NPL:     0.0 ( 0.0%) | Births: 0.18 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   40 | Reward:   1204.03 | Emp: 83.3 | Unemp:  1.0% | Firm: 7.0 | GDP:     151.00 | Gini: 0.40 | Infl:  0.00% | Wage:   1.4 | Treasury:       243 | Reserves:  501780.8 | NPL:     0.0 ( 0.0%) | Births: 0.17 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 40 ─────────────────────────┐
+│ Tiến độ          40/100 iter (40.0%)                                        │
+│ Tốc độ           195.4s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          2h08m                                                      │
+│ ETA tới target   3h15m                                                      │
+│ Phần cứng        CPU 63.4%  |  RAM 90.7%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +33.8/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 20:00:30,286 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_40
+[TRAIN] Iter:   41 | Reward:   1227.32 | Emp: 82.9 | Unemp:  0.9% | Firm: 6.9 | GDP:     149.92 | Gini: 0.40 | Infl:  0.00% | Wage:   1.4 | Treasury:       240 | Reserves:  501747.6 | NPL:     0.0 ( 0.0%) | Births: 0.16 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   42 | Reward:   1260.70 | Emp: 82.8 | Unemp:  0.8% | Firm: 6.7 | GDP:     148.23 | Gini: 0.40 | Infl:  0.00% | Wage:   1.4 | Treasury:       226 | Reserves:  501736.5 | NPL:     0.0 ( 0.0%) | Births: 0.14 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   43 | Reward:   1278.82 | Emp: 83.1 | Unemp:  0.7% | Firm: 6.7 | GDP:     148.41 | Gini: 0.40 | Infl:  0.00% | Wage:   1.4 | Treasury:       234 | Reserves:  501719.5 | NPL:     0.0 ( 0.0%) | Births: 0.15 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   44 | Reward:   1304.06 | Emp: 83.0 | Unemp:  0.7% | Firm: 6.4 | GDP:     147.41 | Gini: 0.40 | Infl:  0.00% | Wage:   1.3 | Treasury:       247 | Reserves:  501666.8 | NPL:     0.0 ( 0.0%) | Births: 0.14 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   45 | Reward:   1324.63 | Emp: 82.8 | Unemp:  0.7% | Firm: 6.3 | GDP:     145.86 | Gini: 0.40 | Infl:  0.00% | Wage:   1.3 | Treasury:       264 | Reserves:  501656.3 | NPL:     0.0 ( 0.0%) | Births: 0.12 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 45 ─────────────────────────┐
+│ Tiến độ          45/100 iter (45.0%)                                        │
+│ Tốc độ           194.3s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          2h24m                                                      │
+│ ETA tới target   2h58m                                                      │
+│ Phần cứng        CPU 61.3%  |  RAM 88.6%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +27.5/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   46 | Reward:   1344.48 | Emp: 82.8 | Unemp:  0.6% | Firm: 6.2 | GDP:     144.63 | Gini: 0.39 | Infl:  0.00% | Wage:   1.3 | Treasury:       260 | Reserves:  501665.6 | NPL:     0.0 ( 0.0%) | Births: 0.12 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   47 | Reward:   1368.87 | Emp: 82.5 | Unemp:  0.6% | Firm: 6.0 | GDP:     143.04 | Gini: 0.39 | Infl:  0.00% | Wage:   1.3 | Treasury:       258 | Reserves:  501644.4 | NPL:     0.0 ( 0.0%) | Births: 0.15 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   48 | Reward:   1372.48 | Emp: 82.8 | Unemp:  0.6% | Firm: 6.2 | GDP:     144.30 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       270 | Reserves:  501671.0 | NPL:     0.0 ( 0.0%) | Births: 0.16 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   49 | Reward:   1387.53 | Emp: 82.6 | Unemp:  0.6% | Firm: 6.1 | GDP:     143.14 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       269 | Reserves:  501655.3 | NPL:     0.0 ( 0.0%) | Births: 0.15 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   50 | Reward:   1396.97 | Emp: 82.5 | Unemp:  0.6% | Firm: 6.2 | GDP:     143.11 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       260 | Reserves:  501667.7 | NPL:     0.0 ( 0.0%) | Births: 0.15 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 50 ─────────────────────────┐
+│ Tiến độ          50/100 iter (50.0%)                                        │
+│ Tốc độ           189.8s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          2h40m                                                      │
+│ ETA tới target   2h38m                                                      │
+│ Phần cứng        CPU 60.8%  |  RAM 87.6%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +18.8/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 20:32:08,460 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_50
+[TRAIN] Iter:   51 | Reward:   1410.36 | Emp: 82.3 | Unemp:  0.6% | Firm: 6.2 | GDP:     142.83 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       264 | Reserves:  501669.2 | NPL:     0.0 ( 0.0%) | Births: 0.16 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   52 | Reward:   1429.95 | Emp: 82.3 | Unemp:  0.6% | Firm: 6.2 | GDP:     141.92 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       277 | Reserves:  501646.0 | NPL:     0.0 ( 0.0%) | Births: 0.12 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   53 | Reward:   1450.31 | Emp: 82.4 | Unemp:  0.6% | Firm: 6.1 | GDP:     141.10 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       278 | Reserves:  501636.7 | NPL:     0.0 ( 0.0%) | Births: 0.09 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   54 | Reward:   1485.21 | Emp: 82.0 | Unemp:  0.5% | Firm: 5.8 | GDP:     139.53 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       279 | Reserves:  501606.7 | NPL:     0.0 ( 0.0%) | Births: 0.07 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   55 | Reward:   1508.83 | Emp: 81.7 | Unemp:  0.5% | Firm: 5.7 | GDP:     138.25 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       284 | Reserves:  501590.9 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 55 ─────────────────────────┐
+│ Tiến độ          55/100 iter (55.0%)                                        │
+│ Tốc độ           186.2s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          2h55m                                                      │
+│ ETA tới target   2h19m                                                      │
+│ Phần cứng        CPU 60.8%  |  RAM 86.1%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +17.1/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   56 | Reward:   1540.80 | Emp: 81.7 | Unemp:  0.6% | Firm: 5.5 | GDP:     136.65 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       281 | Reserves:  501551.6 | NPL:     0.0 ( 0.0%) | Births: 0.05 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   57 | Reward:   1559.67 | Emp: 81.7 | Unemp:  0.6% | Firm: 5.4 | GDP:     136.11 | Gini: 0.39 | Infl:  0.00% | Wage:   1.3 | Treasury:       271 | Reserves:  501545.0 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   58 | Reward:   1575.05 | Emp: 81.5 | Unemp:  0.6% | Firm: 5.3 | GDP:     135.00 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       268 | Reserves:  501550.6 | NPL:     0.0 ( 0.0%) | Births: 0.05 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   59 | Reward:   1585.16 | Emp: 81.4 | Unemp:  0.6% | Firm: 5.3 | GDP:     134.20 | Gini: 0.39 | Infl:  0.00% | Wage:   1.3 | Treasury:       266 | Reserves:  501547.4 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   60 | Reward:   1610.36 | Emp: 81.4 | Unemp:  0.6% | Firm: 5.2 | GDP:     133.07 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       277 | Reserves:  501546.4 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 60 ─────────────────────────┐
+│ Tiến độ          60/100 iter (60.0%)                                        │
+│ Tốc độ           182.5s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          3h10m                                                      │
+│ ETA tới target   2h01m                                                      │
+│ Phần cứng        CPU 60.5%  |  RAM 88.9%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +22.8/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 21:02:33,137 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_60
+[TRAIN] Iter:   61 | Reward:   1635.31 | Emp: 81.8 | Unemp:  0.6% | Firm: 5.2 | GDP:     132.93 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       265 | Reserves:  501550.4 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   62 | Reward:   1654.77 | Emp: 81.6 | Unemp:  0.5% | Firm: 5.1 | GDP:     132.56 | Gini: 0.39 | Infl:  0.00% | Wage:   1.3 | Treasury:       257 | Reserves:  501546.6 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   63 | Reward:   1674.91 | Emp: 81.5 | Unemp:  0.5% | Firm: 5.1 | GDP:     132.49 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       248 | Reserves:  501540.2 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   64 | Reward:   1692.55 | Emp: 81.5 | Unemp:  0.4% | Firm: 5.1 | GDP:     132.88 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       251 | Reserves:  501532.9 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   65 | Reward:   1714.37 | Emp: 81.5 | Unemp:  0.3% | Firm: 5.1 | GDP:     133.29 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       255 | Reserves:  501539.1 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 65 ─────────────────────────┐
+│ Tiến độ          65/100 iter (65.0%)                                        │
+│ Tốc độ           195.5s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          3h28m                                                      │
+│ ETA tới target   1h54m                                                      │
+│ Phần cứng        CPU 65.4%  |  RAM 92.4%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +19.5/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   66 | Reward:   1728.23 | Emp: 81.7 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.02 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       241 | Reserves:  501522.3 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   67 | Reward:   1736.67 | Emp: 81.6 | Unemp:  0.2% | Firm: 5.0 | GDP:     133.90 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       247 | Reserves:  501521.3 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   68 | Reward:   1754.49 | Emp: 81.8 | Unemp:  0.3% | Firm: 5.0 | GDP:     133.94 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       253 | Reserves:  501537.5 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   69 | Reward:   1774.45 | Emp: 81.9 | Unemp:  0.3% | Firm: 5.0 | GDP:     133.91 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       262 | Reserves:  501530.0 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   70 | Reward:   1790.03 | Emp: 81.9 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.21 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       249 | Reserves:  501533.2 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 70 ─────────────────────────┐
+│ Tiến độ          70/100 iter (70.0%)                                        │
+│ Tốc độ           199.9s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          3h43m                                                      │
+│ ETA tới target   1h39m                                                      │
+│ Phần cứng        CPU 62.2%  |  RAM 87.3%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +16.8/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 21:35:51,909 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_70
+[TRAIN] Iter:   71 | Reward:   1808.51 | Emp: 81.9 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.60 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       252 | Reserves:  501540.0 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   72 | Reward:   1839.90 | Emp: 81.8 | Unemp:  0.4% | Firm: 5.0 | GDP:     134.76 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       248 | Reserves:  501570.8 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   73 | Reward:   1869.60 | Emp: 81.6 | Unemp:  0.4% | Firm: 5.0 | GDP:     134.65 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       244 | Reserves:  501583.4 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   74 | Reward:   1896.17 | Emp: 81.7 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.71 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       245 | Reserves:  501605.3 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   75 | Reward:   1917.85 | Emp: 82.1 | Unemp:  0.3% | Firm: 5.0 | GDP:     135.05 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       235 | Reserves:  501631.4 | NPL:     0.0 ( 0.0%) | Births: 0.01 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 75 ─────────────────────────┐
+│ Tiến độ          75/100 iter (75.0%)                                        │
+│ Tốc độ           189.6s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          3h59m                                                      │
+│ ETA tới target   1h18m                                                      │
+│ Phần cứng        CPU 62.0%  |  RAM 86.3%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +21.9/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   76 | Reward:   1939.35 | Emp: 82.4 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.97 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       248 | Reserves:  501657.8 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   77 | Reward:   1955.31 | Emp: 82.3 | Unemp:  0.4% | Firm: 5.0 | GDP:     134.18 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       243 | Reserves:  501679.2 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   78 | Reward:   1967.56 | Emp: 82.7 | Unemp:  0.4% | Firm: 5.0 | GDP:     134.20 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       253 | Reserves:  501686.3 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   79 | Reward:   1974.97 | Emp: 83.0 | Unemp:  0.4% | Firm: 5.0 | GDP:     134.53 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       264 | Reserves:  501698.6 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   80 | Reward:   1973.56 | Emp: 82.9 | Unemp:  0.4% | Firm: 5.0 | GDP:     134.73 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       265 | Reserves:  501680.8 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 80 ─────────────────────────┐
+│ Tiến độ          80/100 iter (80.0%)                                        │
+│ Tốc độ           190.4s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          4h15m                                                      │
+│ ETA tới target   1h03m                                                      │
+│ Phần cứng        CPU 62.5%  |  RAM 86.0%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +18.9/iter)                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 22:07:36,198 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_80
+[TRAIN] Iter:   81 | Reward:   1979.47 | Emp: 82.8 | Unemp:  0.5% | Firm: 5.0 | GDP:     135.58 | Gini: 0.39 | Infl:  0.00% | Wage:   1.3 | Treasury:       273 | Reserves:  501666.7 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   82 | Reward:   1982.35 | Emp: 82.6 | Unemp:  0.4% | Firm: 5.0 | GDP:     135.62 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       272 | Reserves:  501666.3 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   83 | Reward:   1993.38 | Emp: 82.8 | Unemp:  0.4% | Firm: 5.0 | GDP:     136.74 | Gini: 0.38 | Infl:  0.00% | Wage:   1.3 | Treasury:       274 | Reserves:  501662.1 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   84 | Reward:   2001.78 | Emp: 82.3 | Unemp:  0.4% | Firm: 5.0 | GDP:     137.81 | Gini: 0.39 | Infl:  0.00% | Wage:   1.3 | Treasury:       276 | Reserves:  501648.4 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   85 | Reward:   2006.21 | Emp: 81.8 | Unemp:  0.4% | Firm: 5.0 | GDP:     137.95 | Gini: 0.39 | Infl: -0.01% | Wage:   1.3 | Treasury:       274 | Reserves:  501649.0 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 85 ─────────────────────────┐
+│ Tiến độ          85/100 iter (85.0%)                                        │
+│ Tốc độ           190.7s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          4h31m                                                      │
+│ ETA tới target   47m40s                                                     │
+│ Phần cứng        CPU 63.4%  |  RAM 83.4%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +6.6/iter)                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   86 | Reward:   2024.76 | Emp: 81.8 | Unemp:  0.4% | Firm: 5.1 | GDP:     137.82 | Gini: 0.39 | Infl: -0.01% | Wage:   1.3 | Treasury:       266 | Reserves:  501683.2 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   87 | Reward:   2032.28 | Emp: 81.6 | Unemp:  0.3% | Firm: 5.1 | GDP:     136.76 | Gini: 0.39 | Infl: -0.01% | Wage:   1.3 | Treasury:       269 | Reserves:  501702.9 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   88 | Reward:   2044.38 | Emp: 81.9 | Unemp:  0.3% | Firm: 5.1 | GDP:     136.68 | Gini: 0.38 | Infl: -0.01% | Wage:   1.3 | Treasury:       276 | Reserves:  501707.4 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   89 | Reward:   2048.59 | Emp: 81.9 | Unemp:  0.3% | Firm: 5.0 | GDP:     135.73 | Gini: 0.38 | Infl: -0.01% | Wage:   1.3 | Treasury:       290 | Reserves:  501718.0 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   90 | Reward:   2060.17 | Emp: 82.1 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.02 | Gini: 0.37 | Infl: -0.01% | Wage:   1.3 | Treasury:       295 | Reserves:  501742.1 | NPL:     0.0 ( 0.0%) | Births: 0.03 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 90 ─────────────────────────┐
+│ Tiến độ          90/100 iter (90.0%)                                        │
+│ Tốc độ           187.3s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          4h46m                                                      │
+│ ETA tới target   31m13s                                                     │
+│ Phần cứng        CPU 61.1%  |  RAM 81.4%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +9.4/iter)                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 22:38:49,445 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_90
+[TRAIN] Iter:   91 | Reward:   2063.26 | Emp: 82.4 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.02 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       299 | Reserves:  501746.9 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   92 | Reward:   2066.36 | Emp: 82.5 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.19 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       308 | Reserves:  501729.0 | NPL:     0.0 ( 0.0%) | Births: 0.06 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   93 | Reward:   2076.30 | Emp: 82.5 | Unemp:  0.3% | Firm: 5.0 | GDP:     134.97 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       305 | Reserves:  501737.6 | NPL:     0.0 ( 0.0%) | Births: 0.05 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   94 | Reward:   2077.08 | Emp: 82.3 | Unemp:  0.3% | Firm: 5.0 | GDP:     135.57 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       301 | Reserves:  501744.1 | NPL:     0.0 ( 0.0%) | Births: 0.05 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   95 | Reward:   2079.55 | Emp: 82.2 | Unemp:  0.3% | Firm: 5.0 | GDP:     136.10 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       288 | Reserves:  501744.7 | NPL:     0.0 ( 0.0%) | Births: 0.05 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 95 ─────────────────────────┐
+│ Tiến độ          95/100 iter (95.0%)                                        │
+│ Tốc độ           182.9s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          5h02m                                                      │
+│ ETA tới target   15m14s                                                     │
+│ Phần cứng        CPU 60.7%  |  RAM 79.2%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↑ Đang cải thiện (dốc +6.2/iter)                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+[TRAIN] Iter:   96 | Reward:   2082.59 | Emp: 82.1 | Unemp:  0.3% | Firm: 5.0 | GDP:     136.46 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       285 | Reserves:  501740.2 | NPL:     0.0 ( 0.0%) | Births: 0.05 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:   97 | Reward:   2079.56 | Emp: 81.8 | Unemp:  0.3% | Firm: 5.0 | GDP:     136.60 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       269 | Reserves:  501732.8 | NPL:     0.0 ( 0.0%) | Births: 0.04 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   98 | Reward:   2067.57 | Emp: 81.7 | Unemp:  0.3% | Firm: 5.0 | GDP:     136.08 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       262 | Reserves:  501733.6 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.1 | EmBirths/ep:   0.0
+[TRAIN] Iter:   99 | Reward:   2058.62 | Emp: 81.7 | Unemp:  0.2% | Firm: 5.0 | GDP:     135.59 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       257 | Reserves:  501731.2 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+[TRAIN] Iter:  100 | Reward:   2058.98 | Emp: 81.7 | Unemp:  0.2% | Firm: 5.0 | GDP:     134.45 | Gini: 0.37 | Infl:  0.00% | Wage:   1.3 | Treasury:       247 | Reserves:  501740.1 | NPL:     0.0 ( 0.0%) | Births: 0.02 | Deaths/ep:   0.0 | EmBirths/ep:   0.0
+┌──────────────────────── Training Monitor — Iter 100 ────────────────────────┐
+│ Tiến độ          100/100 iter (100.0%)                                      │
+│ Tốc độ           167.2s/iter (TB 10 iter gần nhất)                          │
+│ Đã chạy          5h14m                                                      │
+│ ETA tới target   Đã xong                                                    │
+│ Phần cứng        CPU 61.0%  |  RAM 78.4%  |  GPU: không phát hiện (đang     │
+│                  chạy CPU-only, num_gpus=0)                                 │
+│ Xu hướng reward  ↓ Đang giảm (dốc -0.8/iter)                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+[INFO] 2026-10-07 23:06:41,462 - [SYSTEM] Checkpoint persisted at: be/checkpoint\final_v037_seed707\iter_100
+[INFO] 2026-10-07 23:06:41,463 - [SYSTEM] Training process completed.

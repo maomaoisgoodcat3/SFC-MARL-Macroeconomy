@@ -1,0 +1,109 @@
+{
+ "checkpoint": "be/checkpoint/final_v037_seed707/iter_100",
+ "c3_mode": "split",
+ "passed": true,
+ "conditions": {
+  "effort": true,
+  "wage0": true,
+  "deaths": true,
+  "deaths_original": false,
+  "deaths_split": true,
+  "gov_sensitivity": true,
+  "sfc": true,
+  "births": true,
+  "relief": true
+ },
+ "effort_mean": 0.673987179454241,
+ "effort_low_share": 0.003744027194304589,
+ "deaths_det": [
+  0,
+  0,
+  2
+ ],
+ "deaths_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_never_employed_det": [
+  0,
+  0,
+  2
+ ],
+ "deaths_structural_det": [
+  0,
+  0,
+  2
+ ],
+ "deaths_structural_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_other_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_other_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "classifier_hire_check": [
+  809,
+  0
+ ],
+ "c3_structural_cap": 6.0,
+ "provenance": {
+  "git_head": "d607d67dceedfbf069382c22b1905cdabebc4500",
+  "git_dirty": [
+   "M audits/paper_extras/extra_seeds/run.log",
+   "?? audits/paper_extras/extra_seeds/gate_seed606_iter100.log",
+   "?? audits/paper_extras/extra_seeds/gate_seed606_iter40.log",
+   "?? audits/paper_extras/extra_seeds/gate_seed707_iter100.log",
+   "?? audits/paper_extras/extra_seeds/gate_seed707_iter40.log",
+   "?? audits/paper_extras/extra_seeds/train_seed606.log",
+   "?? audits/paper_extras/extra_seeds/train_seed707.log",
+   "?? be/checkpoint/final_v037_seed606/",
+   "?? be/checkpoint/final_v037_seed707/"
+  ],
+  "sha256": {
+   "audits/final_run/gate_eval.py": "eba87a403c06b6e9",
+   "be/env.py": "b5cc51d3ac6df87c",
+   "be/rule_engine.py": "658038e9c9a0ac05",
+   "be/rllib_wrapper.py": "46e604ee634f8763",
+   "scenarios/em_baseline.yaml": "bcbb523bca15a62d"
+  }
+ },
+ "gov_sens": {
+  "wtax": 0.0,
+  "ftax": 0.334075927734375,
+  "rho": 0.19996333122253418,
+  "inj": 0.26434680819511414,
+  "relief": 0.288318395614624
+ },
+ "sfc_max": 2.930438114390199e-10,
+ "births_max": 0.2708333333333333
+}

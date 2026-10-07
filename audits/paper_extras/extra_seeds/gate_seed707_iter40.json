@@ -1,0 +1,108 @@
+{
+ "checkpoint": "be/checkpoint/final_v037_seed707/iter_40",
+ "c3_mode": "split",
+ "passed": true,
+ "conditions": {
+  "effort": true,
+  "wage0": true,
+  "deaths": true,
+  "deaths_original": true,
+  "deaths_split": true,
+  "gov_sensitivity": true,
+  "sfc": true,
+  "births": true,
+  "relief": true
+ },
+ "effort_mean": 0.8274921321886651,
+ "effort_low_share": 0.03087252621422194,
+ "deaths_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_never_employed_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_structural_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_structural_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_other_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_other_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "classifier_hire_check": [
+  1199,
+  0
+ ],
+ "c3_structural_cap": 6.0,
+ "provenance": {
+  "git_head": "d607d67dceedfbf069382c22b1905cdabebc4500",
+  "git_dirty": [
+   "M audits/paper_extras/extra_seeds/run.log",
+   "?? audits/paper_extras/extra_seeds/gate_seed606_iter100.log",
+   "?? audits/paper_extras/extra_seeds/gate_seed606_iter40.log",
+   "?? audits/paper_extras/extra_seeds/gate_seed707_iter40.log",
+   "?? audits/paper_extras/extra_seeds/train_seed606.log",
+   "?? audits/paper_extras/extra_seeds/train_seed707.log",
+   "?? be/checkpoint/final_v037_seed606/",
+   "?? be/checkpoint/final_v037_seed707/"
+  ],
+  "sha256": {
+   "audits/final_run/gate_eval.py": "eba87a403c06b6e9",
+   "be/env.py": "b5cc51d3ac6df87c",
+   "be/rule_engine.py": "658038e9c9a0ac05",
+   "be/rllib_wrapper.py": "46e604ee634f8763",
+   "scenarios/em_baseline.yaml": "bcbb523bca15a62d"
+  }
+ },
+ "gov_sens": {
+  "wtax": 0.15847492218017578,
+  "ftax": 0.16859661042690277,
+  "rho": 0.451724648475647,
+  "inj": 0.2664191424846649,
+  "relief": 0.35101211071014404
+ },
+ "sfc_max": 3.0175506537943875e-10,
+ "births_max": 0.35
+}

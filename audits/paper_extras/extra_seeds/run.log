@@ -12,3 +12,17 @@
 == seed 505 cong iter 100 bat dau 2026-10-06 22:41:35
 == seed 505 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-06 22:46:07
 == NGAY XONG 2026-10-06 22:46:07
+== NGAY BAT DAU 2026-10-07 12:47:31 commit d072f87 seeds: 606 707
+== seed 606 train bat dau 2026-10-07 12:47:31
+== seed 606 train xong rc=0 2026-10-07 17:51:35
+== seed 707 train bat dau 2026-10-07 17:51:35
+== seed 707 train xong rc=0 2026-10-07 23:06:43
+== seed 606 cong iter 40 bat dau 2026-10-07 23:06:43
+== seed 606 cong iter 40 xong rc=0 GATE_RESULT: PASS 2026-10-07 23:09:57
+== seed 606 cong iter 100 bat dau 2026-10-07 23:09:57
+== seed 606 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-07 23:13:01
+== seed 707 cong iter 40 bat dau 2026-10-07 23:13:01
+== seed 707 cong iter 40 xong rc=0 GATE_RESULT: PASS 2026-10-07 23:16:10
+== seed 707 cong iter 100 bat dau 2026-10-07 23:16:10
+== seed 707 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-07 23:20:06
+== NGAY XONG 2026-10-07 23:20:06
