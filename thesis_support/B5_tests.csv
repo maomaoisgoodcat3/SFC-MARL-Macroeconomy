@@ -1,0 +1,51 @@
+file,kind,test,line,n_cases,checks,pathology_ids,self_checks_buggy_logic_via
+test_sfc_accounting.py,SFC heuristic,test_sfc_conservation_single_bank,147,3,"Bảo toàn dòng tiền từng bước (ΔTổng = −khấu hao) + 2 bất biến sổ cái, 1 ngân hàng, 3 seed, policy heuristic",18;19;28,
+test_sfc_accounting.py,SFC heuristic,test_sfc_conservation_multi_bank,154,3,Như trên với nhiều ngân hàng (định tuyến creditor/depository bank không rò hoặc nhân đôi tiền),18;19;28,
+test_sfc_random_policy.py,SFC policy ngẫu nhiên,test_sfc_conservation_random_policy,94,8,"Bảo toàn dòng tiền dưới hành động ngẫu nhiên kiểu RL; bắt buộc kích hoạt bơm cầu, tiền phạt, chi mua G",3;18;19;28,
+test_sfc_random_policy.py,SFC policy ngẫu nhiên,test_sfc_conservation_when_deficit_creates_public_debt,126,2,"Ép Kho bạc âm → nợ công; đẳng thức có trừ nợ công vẫn đúng từng bước, kênh phải thật sự kích hoạt",30,
+test_env_contracts.py,hợp đồng môi trường,test_train_and_simulate_paths_are_identical,61,1,Đường train (RLlib wrapper) và simulate cho cùng obs/reward/terminated từng bước,5,
+test_env_contracts.py,hợp đồng môi trường,test_death_penalty_scales_with_age_after_reward_pipeline,86,1,"Sau pipeline reward, phạt tử vong người trẻ nặng hơn người già và không chạm trần clip",4;5,
+test_env_contracts.py,hợp đồng môi trường,test_reward_clip_too_small_is_rejected,114,1,reward_clip quá nhỏ bị từ chối khi khởi tạo,5,
+test_env_contracts.py,hợp đồng môi trường,test_sanitizers_neutralize_non_finite_values,119,1,Bộ làm sạch action/obs thay NaN/Inf bằng giá trị hữu hạn,,
+test_env_contracts.py,hợp đồng môi trường,test_economy_receives_positive_trade_volume,125,1,Economy nhận khối lượng giao dịch > 0 (khoá total_market_turnover được ghi),6,
+test_env_contracts.py,hợp đồng môi trường,test_train_and_server_share_one_ppo_config,136,1,"main.py và server.py dùng chung cấu hình PPO (mạng, vf_clip_param, danh sách policy)",12,
+test_env_contracts.py,hợp đồng môi trường (đo khuếch đại),test_price_indexation_loop_gain_equals_theta_above_ceiling,146,4,"Trên trần chỉ số hoá, dP_t/dP_{t-1} = θ_Calvo ở 4 mức cung (nhiễu +2% trên 2 bản sao)",2;8;17,
+test_env_contracts.py,hợp đồng môi trường (ép hành động),test_hiring_is_not_dominated_by_firing,197,1,"Ép thuê/sa thải: reward Firm khi thuê > khi sa thải, việc làm, giá trong [0.25×, 3×], ≥4/5 firm sống, không nợ công",7;16;17;35,
+test_env_contracts.py,hợp đồng môi trường,test_government_purchases_follow_taxes_and_treasury_cap,214,1,"G_t = min(ρ·(thuế+phạt kỳ trước), số dư Kho bạc)",7;17,
+test_env_contracts.py,hợp đồng môi trường,test_household_consumption_draws_on_deposits,233,1,"Hộ có tiền gửi nhưng 0 tiền mặt vẫn chi tiêu được, tiền gửi giảm tương ứng",7,
+test_env_contracts.py,hợp đồng môi trường,test_government_reward_is_based_on_real_gdp,249,1,Reward Government theo GDP thực: kinh tế lành mạnh > siêu lạm phát,11,
+test_env_contracts.py,hợp đồng môi trường,test_initial_conditions_avoid_artificial_crisis_window,267,1,"Dưới policy ngẫu nhiên: phần lớn có việc từ đầu, giá không sốc quá 5×, gần như không chết trong 60 bước đầu",8;10,
+test_env_contracts.py,hợp đồng môi trường,test_initial_employment_assignment_is_capital_weighted_and_shuffled,303,1,"Gán việc ban đầu đúng 90%, mỗi người 1 firm, theo trọng số vốn (Hamilton)",10,
+test_env_contracts.py,hợp đồng môi trường,test_wage_ratchet_converges_near_ceiling_with_mrpl_scale_fix,356,1,Lương hội tụ quanh trần với mrpl_scale_constant; bản cũ (scale 1.0) tái hiện cóc lương,8;16;30,mrpl_scale=1.0
+test_env_contracts.py,hợp đồng môi trường (đo khuếch đại),test_wage_renegotiation_does_not_open_single_step_price_loop,403,3,Đàm phán lại lương không làm khuếch đại 1 bước vượt θ ở 3 xác suất đàm phán,24,
+test_env_contracts.py,hợp đồng môi trường,test_wage_renegotiation_reduces_ratchet_on_price_reversal,468,1,Giá lên rồi xuống: prob 0.12 giảm cóc lương rõ so với prob 0 (logic cũ tái hiện được),24,wage_renegotiation_prob=0.0
+test_env_contracts.py,hợp đồng môi trường,test_firm_bankruptcy_via_rule_engine_is_not_a_zombie,500,1,"Firm phá sản theo rule_engine nhận BANKRUPT/terminated, không thành zombie",13,
+test_env_contracts.py,hợp đồng môi trường,test_last_bank_bankruptcy_triggers_bailout_not_crash,521,1,"Ngân hàng duy nhất phá sản → cứu trợ, không crash episode",14,
+test_env_contracts.py,hợp đồng môi trường,test_bailout_is_not_free_money_bagehot_penalty_rate,539,1,"Cứu trợ tạo khoản nợ có lãi phạt (Bagehot), không phải tiền miễn phí",14,
+test_env_contracts.py,hợp đồng môi trường,test_second_bank_bankruptcy_is_cleaned_up_when_another_survives,565,1,"Có ≥2 ngân hàng: ngân hàng chết được dọn, không cứu trợ, terminated đúng 1 lần",14,
+test_env_contracts.py,hợp đồng môi trường,test_parquet_read_dataset_round_trips_with_installed_pyarrow,581,1,read_dataset đọc lại đúng dữ liệu đã ghi với pyarrow đang cài,15,
+test_env_contracts.py,hợp đồng môi trường (đo khuếch đại),test_employee_credit_loop_gain_equals_theta,602,4,Kênh tín dụng tiêu dùng không mở lại vòng lặp: khuếch đại 1 bước = θ ở 4 mức cung,1,
+test_env_contracts.py,hợp đồng môi trường,test_employee_liquidity_constrained_borrows_and_bank_reflects_it,630,1,Người thiếu thanh khoản vay được và khoản vay hiện trong dư nợ ngân hàng,,
+test_env_contracts.py,hợp đồng môi trường,test_employee_never_borrows_beyond_subsistence_shortfall,657,1,Vay không vượt phần thiếu hụt sinh tồn,,
+test_env_contracts.py,hợp đồng môi trường,test_employee_death_with_debt_is_written_off_not_ghost_debt,681,1,"Người chết có nợ → ghi nợ xấu đúng ngân hàng, không nợ ma, SFC vẫn đúng",13,
+test_env_contracts.py,hợp đồng môi trường (đo khuếch đại),test_economy_buffer_stock_loop_gain_equals_theta,723,4,Buffer-stock mua/bán tối đa không làm khuếch đại 1 bước vượt θ ở 4 mức cung,19,
+test_env_contracts.py,hợp đồng môi trường,test_economy_buffer_stock_conserves_sfc_on_forced_sell,764,1,Ép Economy bán: tổng giá trị hệ thống bảo toàn qua 1 bước,19,
+test_env_contracts.py,hợp đồng môi trường,test_economy_buffer_stock_never_exceeds_balance_sheet_constraints,797,1,Quỹ và kho của Economy không bao giờ âm,19,
+test_env_contracts.py,hợp đồng môi trường,test_default_loss_is_recognized_once_in_bank_equity,831,1,Vỡ nợ D làm vốn ngân hàng giảm ~D (không ~2D),28,
+test_env_contracts.py,hợp đồng môi trường,test_bank_failure_uses_equity_not_gross_reserves,859,1,Phá sản ngân hàng theo vốn chủ sở hữu; tiêu chí cũ (reserves) tái hiện được,28,bank_failure_criterion='reserves'
+test_env_contracts.py,hợp đồng môi trường,test_deposit_ledger_stays_consistent_after_death_and_inheritance,876,1,Sổ cái tiền gửi khớp sau chết và thừa kế,28,
+test_env_contracts.py,hợp đồng môi trường,test_shirking_is_detected_only_below_effort_threshold,911,1,Chỉ effort dưới ngưỡng mới bị phát hiện lười và sa thải (q = 1),27,
+test_env_contracts.py,hợp đồng môi trường,test_shirking_monitor_has_no_wage_effect_at_compliant_effort,932,1,"Khi effort tuân thủ, giám sát không ảnh hưởng lương (trùng q = 0)",27,
+test_env_contracts.py,hợp đồng môi trường (ép hành động),test_effort_has_private_benefit_only_with_monitoring,956,1,"Ép effort 0.1 vs 0.6: q=0 lười thắng, q=0.05 tuân thủ thắng (tương thích khuyến khích)",27,shirking_monitor_prob=0 (đối chứng)
+test_env_contracts.py,hợp đồng môi trường,test_dismissed_shirker_cannot_be_rehired_until_lockout_expires,987,1,Người bị sa thải vì lười không được tuyển lại trước khi hết lockout,27,
+test_env_contracts.py,hợp đồng môi trường,test_government_action_space_has_unemployment_relief_dimension,1029,1,Action Government có chiều thứ 5 (mức trợ cấp),29,
+test_env_contracts.py,hợp đồng môi trường,test_government_relief_action_scales_subsidies_linearly_and_can_be_zero,1039,1,"Trợ cấp tuyến tính theo action[4], bằng 0 khi action = 0",29,
+test_env_contracts.py,hợp đồng môi trường,test_government_reward_is_equality_times_productivity_and_legacy_is_reproducible,1060,1,Reward Government = 0.02·(1−Gini)·GDP thực − phạt tử vong; dạng cũ tái hiện được,29,reward_mode='legacy'
+test_env_contracts.py,hợp đồng môi trường,test_initial_treasury_is_operating_balance_and_legacy_endowment_funding_reproducible,1079,1,Kho bạc ban đầu = số dư vận hành; logic cũ (Kho bạc tài trợ vốn khởi tạo) tái hiện được,29,initial_treasury=1e6 + treasury_funds_initial_endowments=True
+test_env_contracts.py,hợp đồng môi trường,test_market_demand_factor_is_an_informative_observation_not_a_constant,1092,1,"market_demand_factor trong obs Firm có phương sai thật, không dính sàn",29,
+test_env_contracts.py,hợp đồng môi trường,test_treasury_outflow_counters_track_offbook_spending_channels,1107,1,3 bộ đếm chi Kho bạc ngoài sổ khớp đúng tổng chi từng kênh,29;30,
+test_env_contracts.py,hợp đồng môi trường,test_initial_employees_have_the_wage_they_are_actually_paid,1164,1,Lao động có việc lúc reset có wage > 0 đúng mức được trả,30,
+test_env_contracts.py,hợp đồng môi trường,test_unemployment_relief_is_paid_within_treasury_budget,1203,1,Trợ cấp không bị cổng tuyệt đối 1000 chặn nhưng không vượt số dư; logic cũ tái hiện được,30,relief gate 'legacy_gate'
+test_env_contracts.py,hợp đồng môi trường,test_buffer_band_blocks_procyclical_intervention,1234,1,Dải ±band chặn mua khi giá cao/bán khi giá thấp; logic cũ (không dải) tái hiện được,31,buffer_stock_rule='legacy_fixed_anchor'
+test_env_contracts.py,hợp đồng môi trường,test_buffer_buy_is_bounded_by_current_household_market,1251,1,Lượng mua ≤ κ × chi tiêu hộ của bước; logic cũ (mốc cố định) tái hiện được,31,buffer_stock_rule='legacy_fixed_anchor'
+test_env_contracts.py,hợp đồng môi trường (ép hành động),test_late_buffer_buy_after_deflation_no_longer_triples_prices,1278,1,"Mua muộn sau giảm phát: logic mới giá ≤1.5× trong 10 bước, logic cũ >2×",31,buffer_stock_rule='legacy_fixed_anchor'

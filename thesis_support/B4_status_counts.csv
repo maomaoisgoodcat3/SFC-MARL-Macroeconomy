@@ -1,0 +1,13 @@
+kind,value,count
+status,chấp nhận làm hạn chế,4
+status,không sửa vì đóng băng,4
+status,mở,1
+status,đã sửa,25
+status,đã sửa một phần,2
+group,công cụ & thiết kế benchmark,5
+group,khuyến khích,4
+group,không chặn,4
+group,kế toán,5
+group,thể chế & khởi tạo,7
+group,tích hợp RL,5
+group,vòng lặp & mốc neo quy mô,6
