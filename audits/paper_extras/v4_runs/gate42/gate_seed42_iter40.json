@@ -1,0 +1,104 @@
+{
+ "checkpoint": "be/checkpoint/final_v037_seed42/iter_40",
+ "c3_mode": "split",
+ "passed": true,
+ "conditions": {
+  "effort": true,
+  "wage0": true,
+  "deaths": true,
+  "deaths_original": false,
+  "deaths_split": true,
+  "gov_sensitivity": true,
+  "sfc": true,
+  "births": true,
+  "relief": true
+ },
+ "effort_mean": 0.8544625540465056,
+ "effort_low_share": 0.026823957596611544,
+ "deaths_det": [
+  0,
+  0,
+  3
+ ],
+ "deaths_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_never_employed_det": [
+  0,
+  0,
+  3
+ ],
+ "deaths_structural_det": [
+  0,
+  0,
+  3
+ ],
+ "deaths_structural_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "deaths_other_det": [
+  0,
+  0,
+  0
+ ],
+ "deaths_other_exp": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "classifier_hire_check": [
+  1222,
+  0
+ ],
+ "c3_structural_cap": 6.0,
+ "provenance": {
+  "git_head": "fd6bdcae033f5034ad59071f998d49241f8d5378",
+  "git_dirty": [
+   "?? audits/paper_extras/v4_runs/gate42/",
+   "?? audits/paper_extras/v4_runs/queue_v1.log",
+   "?? audits/paper_extras/v4_runs/queue_v2.log",
+   "?? audits/paper_extras/v4_runs/v2/"
+  ],
+  "sha256": {
+   "audits/final_run/gate_eval.py": "eba87a403c06b6e9",
+   "be/env.py": "b5cc51d3ac6df87c",
+   "be/rule_engine.py": "658038e9c9a0ac05",
+   "be/rllib_wrapper.py": "46e604ee634f8763",
+   "scenarios/em_baseline.yaml": "bcbb523bca15a62d"
+  }
+ },
+ "gov_sens": {
+  "wtax": 0.0,
+  "ftax": 0.04349549114704132,
+  "rho": 0.027902185916900635,
+  "inj": 0.14170882105827332,
+  "relief": 0.2657845914363861
+ },
+ "sfc_max": 3.511351209795066e-10,
+ "births_max": 0.31666666666666665
+}

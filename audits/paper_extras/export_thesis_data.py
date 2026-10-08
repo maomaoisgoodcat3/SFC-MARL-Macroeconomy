@@ -11,7 +11,9 @@ os.chdir(REPO)
 RR = os.path.expanduser("~/ray_results")
 RUNS = {42: [("PPO_RLlibMacroEnv_2026-09-28_13-53-16*", 1, 50), ("PPO_RLlibMacroEnv_2026-09-28_18-13-35*", 51, 100)],
         202: [("PPO_RLlibMacroEnv_2026-09-29_14-31-38*", 1, 100)], 303: [("PPO_RLlibMacroEnv_2026-10-01_16-34-53*", 1, 100)],
-        404: [("PPO_RLlibMacroEnv_2026-10-06_11-57-23*", 1, 100)], 505: [("PPO_RLlibMacroEnv_2026-10-06_16-50-44*", 1, 100)]}
+        404: [("PPO_RLlibMacroEnv_2026-10-06_11-57-23*", 1, 100)], 505: [("PPO_RLlibMacroEnv_2026-10-06_16-50-44*", 1, 100)],
+        606: [("PPO_RLlibMacroEnv_2026-10-07_12-47-48*", 1, 100)], 707: [("PPO_RLlibMacroEnv_2026-10-07_17-51-44*", 1, 100)],
+        808: [("PPO_RLlibMacroEnv_2026-10-08_09-41-29*", 1, 100)], 909: [("PPO_RLlibMacroEnv_2026-10-08_14-29-18*", 1, 100)]}
 POL = ["government", "employee", "firm", "bank", "supervisor", "economy"]
 os.makedirs("thesis_support", exist_ok=True)
 
