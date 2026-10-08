@@ -1,0 +1,35 @@
+== BAT DAU 2026-10-08 21:02:46 commit fd6bdca
+== cong seed42 iter 40 bat dau 21:02:46
+== cong seed42 iter 40 xong rc=0 GATE_RESULT: PASS 21:11:05
+== cong seed42 iter 100 bat dau 21:11:05
+== cong seed42 iter 100 xong rc=0 GATE_RESULT: PASS 21:19:46
+== v1 7nhanh seed 404 det bat dau 21:19:46
+== v1 7nhanh seed 404 det xong rc=0 21:31:33
+== v1 quet seed 404 det bat dau 21:31:33
+== v1 quet seed 404 det xong rc=0 21:47:24
+== v1 7nhanh seed 404 exp bat dau 21:47:24
+== DUNG THEO YEU CAU NGUOI DUNG 2026-10-08 21:52: quet thue phang doi sang 09/10 (sweep_seed404_det DA XONG, giu lai); bench7_seed404_exp dang chay bi dung (chua co JSON) -> chay lai bang queue_v1b.sh (chi 7 nhanh)
+== BAT DAU queue_v1b 2026-10-08 21:53:05 commit 904ed64
+== v1 7nhanh seed 404 exp bat dau 21:53:05
+== v1 7nhanh seed 404 exp xong rc=0 1 22:02:48
+== v1 7nhanh seed 505 det bat dau 22:02:48
+== v1 7nhanh seed 505 det xong rc=0 1 22:12:41
+== v1 7nhanh seed 505 exp bat dau 22:12:41
+== v1 7nhanh seed 505 exp xong rc=0 1 22:22:27
+== v1 7nhanh seed 606 det bat dau 22:22:27
+== v1 7nhanh seed 606 det xong rc=0 1 22:30:50
+== v1 7nhanh seed 606 exp bat dau 22:30:50
+== v1 7nhanh seed 606 exp xong rc=0 1 22:39:49
+== v1 7nhanh seed 707 det bat dau 22:39:50
+== v1 7nhanh seed 707 det xong rc=0 1 22:48:25
+== v1 7nhanh seed 707 exp bat dau 22:48:25
+== v1 7nhanh seed 707 exp xong rc=0 1 23:01:28
+== v1 7nhanh seed 808 det bat dau 23:01:28
+== v1 7nhanh seed 808 det xong rc=0 1 23:11:09
+== v1 7nhanh seed 808 exp bat dau 23:11:09
+== v1 7nhanh seed 808 exp xong rc=0 1 23:21:26
+== v1 7nhanh seed 909 det bat dau 23:21:26
+== v1 7nhanh seed 909 det xong rc=0 1 23:33:05
+== v1 7nhanh seed 909 exp bat dau 23:33:05
+== v1 7nhanh seed 909 exp xong rc=0 1 23:41:46
+== HANG DOI A XONG (chi 7 nhanh; quet doi sang 09/10) 2026-10-08 23:41:46
