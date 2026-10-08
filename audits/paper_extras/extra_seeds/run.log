@@ -26,3 +26,17 @@
 == seed 707 cong iter 100 bat dau 2026-10-07 23:16:10
 == seed 707 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-07 23:20:06
 == NGAY XONG 2026-10-07 23:20:06
+== NGAY BAT DAU 2026-10-08 09:41:09 commit e04cb35 seeds: 808 909
+== seed 808 train bat dau 2026-10-08 09:41:09
+== seed 808 train xong rc=0 2026-10-08 14:29:00
+== seed 909 train bat dau 2026-10-08 14:29:00
+== seed 909 train xong rc=0 2026-10-08 19:44:38
+== seed 808 cong iter 40 bat dau 2026-10-08 19:44:38
+== seed 808 cong iter 40 xong rc=0 GATE_RESULT: PASS 2026-10-08 19:47:49
+== seed 808 cong iter 100 bat dau 2026-10-08 19:47:49
+== seed 808 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-08 19:51:00
+== seed 909 cong iter 40 bat dau 2026-10-08 19:51:00
+== seed 909 cong iter 40 xong rc=0 GATE_RESULT: PASS 2026-10-08 19:55:52
+== seed 909 cong iter 100 bat dau 2026-10-08 19:55:52
+== seed 909 cong iter 100 xong rc=0 GATE_RESULT: PASS 2026-10-08 19:59:52
+== NGAY XONG 2026-10-08 19:59:52
