@@ -1,0 +1,42 @@
+# DANG KY TRUOC — A8: thiet ke "lap lai duoc dang ky truoc" cho 9 seed (khoa luan + paper).
+# Viet 2026-10-08 (theo YEU_CAU_CLAUDE_CODE_v4, nguoi dung duyet Q1 = 9 seed, Q2 = quet thue phang tren moi seed).
+# Commit + push TRUOC khi tao bat ky file ket qua benchmark/quet nao cua seed 404-909.
+
+model_code_frozen: "14406fd (02/10/2026); be/ khong doi tu ed57a19 (PREREG_extra_seeds.yaml)"
+seeds:
+  original: [42, 202, 303]           # ket qua da duoc xem -> giu nguyen la phep kiem GOC, khong sua, khong chay lai de thay the
+  replication: [404, 505, 606, 707, 808, 909]   # PREREG_extra_seeds.yaml (3719961); huan luyen xong 06-08/10, ca 6 DAT cong (split)
+  report: "rieng 3 seed goc, rieng 6 seed lap lai, va gop 9 seed — moi bang"
+
+replication_design:
+  same_as_original:
+    arms_benchmark: [rl_learned, free_market, us_federal, saez, free_market+rl_aux, us_federal+rl_aux, saez+rl_aux]
+    arms_sweep: [rl_learned, free_market+rl_aux, rl_mean_fixed, flat_pit0.10_cit0, flat_pit0.20_cit0, flat_pit0.30_cit0,
+                 flat_pit0.50_cit0, flat_pit0_cit0.10, flat_pit0_cit0.20, flat_pit0_cit0.30, flat_pit0_cit0.50]
+    protocol: "checkpoint iter_100; 10 episode, reset seed 42+i; che do tat dinh va lay mau; --batched-inference; --config scenarios/em_baseline.yaml"
+    run_order: >-
+      bench-v1 (be/benchmark.py, tag bench-v1 -> 371799e, KHONG sua): (1) lan chay 7 nhanh mac dinh (thu tu nhanh mac dinh, giong
+      audits/paper_extras/negwealth_7arms/run_one.sh); (2) lan chay quet voi --arms dung chuoi ARMS cua audits/final_run/run_flat_sweep.sh.
+      Giu thu tu nhanh y het seed goc vi o che do lay mau v1 ket qua phu thuoc thu tu nhanh (KNOWN_PATHOLOGIES #36).
+    metrics: "Eq×Prod moi episode = TB_buoc(GDP thuc) × (1 − TB_buoc(Gini)) — thuoc do chinh, khong doi"
+    hypotheses: >-
+      H1–H4 NGUYEN VAN dang ky truoc tai 4e0327d (audits/final_run/PREREG_flat_sweep.md), cach kiem co dinh tai 0d964d8
+      (audits/final_run/aggregate_flat_sweep.py dong 3-14); ap dung cung script, cung bootstrap 2 cap (10 000, rng(0)).
+    v2_rules: "bench-v2 (PREREG_A74_bench_v2.yaml 6a95505 + sua doi 452fb00): cung quy tac disagreement_rule, chay CA 9 seed"
+  primary_estimates: "IQM + CI95 bootstrap 2 cap (seed -> episode) nhu da dang ky; them mean^{±std} theo seed (yeu cau giang vien) va khoang t (n−1)"
+
+interpretation_rule: >-
+  Neu ket luan tren 6 seed lap lai KHAC 3 seed goc (dau cua mot hieu ghep cap doi, CI doi tu chua 0 sang khong chua 0 hoac nguoc lai,
+  hoac mot H1–H4 doi trang thai DUNG/SAI), khoa luan va paper viet DUNG NHU VAY cho tung so sanh, khong chon tap seed co loi.
+  Ket qua gop 9 seed bao cao song song, khong thay the bao cao rieng.
+
+blindness_disclosure:   # tinh den thoi diem commit file nay (2026-10-08 toi)
+  benchmark_or_sweep_of_new_seeds: "CHUA chay va CHUA xem: khong co file bench/sweep/negwealth nao cua seed 404-909 (tim theo ten file trong repo va scratchpad, 2026-10-08)"
+  seen_before_commit:   # du lieu HUAN LUYEN/CONG cua seed moi DA duoc xem (khong phai ket qua benchmark) — khai bao de doc gia tu danh gia
+    - "log huan luyen [TRAIN] tung iter cua 404-909 (bao cao 40 phut/lan); luu y: dong [TRAIN] ghi gia tri BUOC CUOI episode, GDP danh nghia"
+    - "ket qua 7 dieu kien cong iter 40/100 cua 404-909 (gate_seed*_iter*.log/json)"
+    - "learning_curves.csv (404, 505) va effort_histograms.csv (404, 505) xuat 07/10 (thesis_support/)"
+    - "hien tuong cuoi episode da thay trong log: 404 (iter 91-100 GDP danh nghia buoc cuoi 152->208, lam phat −0.79%), 909 (iter 87-100 Gini buoc cuoi 0.42->0.67)"
+  status: "ca 6 seed moi duoc coi la MU voi ket qua benchmark/quet; khong seed nao 'khong mu'"
+
+report_rules: "bao cao moi seed (ke ca neu sau nay co seed truot cong), moi nhanh, ca hai che do; khong chay lai tru loi chuong trinh; ket qua bao nguyen van"

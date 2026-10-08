@@ -1,0 +1,1 @@
+# sha256_dir = sha256 cua (duong dan tuong doi + noi dung) moi file, duyet os.walk sap xep; cung cach voi audits/paper_extras/benchmark_v2.py::sha256_files

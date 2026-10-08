@@ -108,3 +108,19 @@ amendment_2026-10-07_rng_pairing:   # SUA DOI CO NGAY — commit TRUOC khi sua m
       Voi moi seed va moi so sanh (rl_learned − nhanh X), do lech chuan qua 10 episode cua hieu ghep cap Eq×Prod (thuoc do chinh) o
       che do lay mau: SD_v2 so voi SD_v1 (JSON bench-v1 da co). Bao ty so SD_v2/SD_v1 theo tung seed × so sanh + trung vi; ty so > 1
       cung bao nguyen van. Khong hua truoc muc giam.
+
+amendment_2026-10-08_logging:   # SUA DOI CO NGAY — commit TRUOC khi sua ma va TRUOC moi lan chay v2 that (YEU_CAU v4: P0.1, P0.3, P0.8)
+  date: "2026-10-08"
+  status: "CHUA co du lieu that nao cua v2 (chi smoke/check_pairing tren seed 42, episode ngan)"
+  change: >-
+    CHI THEM DAU RA, khong doi phep do hay so sanh da dang ky: (1) ghi file du lieu THEO BUOC (csv.gz) cho moi nhanh:
+    GDP thuc, GDP danh nghia, gia (eco.base_living_cost), Gini mo hinh, G_P x3, effort TB, tieu dung TB, tong no ho, tu vong/sinh
+    trong buoc, 5 hanh dong Government, Kho bac, no cong, thue/phat/mua/tro cap/bom cau trong buoc; (2) them cot tong hop moi episode:
+    births, min tai san, Kho bac cuoi, no cong cuoi, gia TB. Thue tach TNCN/DN: KHONG CO (mo hinh chi luu tong).
+    Muc dich: P0.1 (cot mo rong — o che do tat dinh v2 trung v1 tung so nen gan duoc cho v1), P0.8 (phan tich cuoi chan troi: 20 buoc
+    cuoi so voi buoc 1-220 — PHAN TICH KHAM PHA, khong phai kiem dinh dang ky truoc).
+  checks_before_real_run: "check_pairing_v2.py phai van DAT ca 4 (tat dinh v2 == v1 tung so) sau khi them dau ra; tag bench-v2.1"
+  extra_checks_P0.3: >-
+    (a) ghep cap du 240 buoc voi MOI nhanh (khong chi us_federal): ty le tac tu nhan cung nhieu theo buoc; (b) nhieu gan theo VI TRI
+    trong lo (khoa = seed|episode|buoc|policy|stt lan goi; lo sap theo thu tu env.agents) — tra loi tu ma; (c) doc lap thu tu nhanh:
+    chay 1 seed che do lay mau voi thu tu nhanh dao nguoc, so tung episode voi thu tu goc. Bao nguyen van.
