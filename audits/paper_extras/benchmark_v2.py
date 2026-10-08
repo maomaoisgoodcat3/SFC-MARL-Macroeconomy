@@ -20,6 +20,8 @@ Dung (KHONG chay song song voi huan luyen — dieu kien 8):
       [--arms ...] --json-out <file>
 """
 import argparse
+import csv
+import gzip
 import hashlib
 import json
 import os
@@ -39,7 +41,7 @@ from be.env import MacroEnvironment  # noqa: E402
 from be.rule_engine import RuleEngine  # noqa: E402
 from be.scenario_config import ScenarioConfig  # noqa: E402
 
-TOOL_VERSION = "bench-v2"
+TOOL_VERSION = "bench-v2.1"  # v2.1 (2026-10-08): chi them dau ra theo buoc + cot mo rong (sua doi dang ky 649087d)
 PREREG = "audits/paper_extras/PREREG_A74_bench_v2.yaml"
 GINI_KEYS = ("gini_model_recomputed", "gp_wealth", "gp_net_wealth", "gp_consumption")
 # Ham Gini GOC cua mo hinh (giu tham chieu truoc khi StepRecorder cai bo bat mang tai san, xem StepRecorder.__init__).
@@ -184,6 +186,25 @@ class StepRecorder:
         n = int(wealth.size)
         row = dict(n=n, gini_env=float(self.env.gov.current_gini), wealth_from_engine=engine_ok,
                    gini_model_poststep=(gini_model(post_wealth) if post_wealth.size else float("nan")))
+        # (v2.1, sua doi dang ky 2026-10-08) DAU RA THEM theo buoc — chi doc thuoc tinh co san, khong doi hanh vi env.
+        env, gov = self.env, self.env.gov
+        live_all = list(self._live().values())
+        ga = np.asarray(actions.get(gov.agent_id, [np.nan] * 5), dtype=np.float64)
+        row.update(
+            t=self.t, real_gdp=float(gov.current_real_gdp), nominal_gdp=float(gov.current_gdp),
+            price=float(env.eco.base_living_cost), deaths_cum=int(gov.dead_citizens_count),
+            births=int(getattr(env, "births_this_step", 0)), n_live_after=len(live_all),
+            effort_mean=float(np.mean([e.last_work_effort for e in emps])) if emps else float("nan"),
+            consumption_mean=float(cons.mean()) if cons.size else float("nan"),
+            household_debt_total=float(sum(getattr(e, "debt", 0.0) for e in live_all)),
+            unemployment=float(np.mean([e.employed_by is None for e in live_all])) if live_all else float("nan"),
+            treasury=float(gov.treasury), public_debt=float(gov.public_debt),
+            tax=float(gov.last_tax_collected), fines=float(gov.last_fines_collected), purchases=float(gov.last_purchase),
+            relief_paid=float(gov.last_subsidies_paid), injection=float(gov.last_demand_injection_value),
+            gov_a0=ga[0], gov_a1=ga[1], gov_a2=ga[2], gov_a3=ga[3], gov_a4=ga[4],
+            exec_pit=float(gov.tax_rate_worker), exec_cit=float(gov.tax_rate_firm), exec_rho=float(gov.purchase_ratio),
+            exec_inj=float(gov.demand_injection_ratio),
+        )
         if n == 0:
             row.update({k: float("nan") for k in GINI_KEYS})
             row.update(k=0, t_plus=0.0, t_minus=0.0, min_w=float("nan"), mean_w=float("nan"), bias_condition=None)
@@ -234,6 +255,10 @@ class StepRecorder:
                                                              for x in neg])) if neg else 0.0),
             min_wealth_episode=float(min(x["min_w"] for x in r if x["n"] > 0)),
             neg_net_step_share=float(np.mean([x.get("k_net", 0) > 0 for x in r])),
+            # (v2.1) cot mo rong cho P0.1
+            births_episode=int(sum(x.get("births", 0) for x in r)), treasury_end=float(r[-1].get("treasury", np.nan)),
+            public_debt_end=float(r[-1].get("public_debt", np.nan)), price_mean=m("price"),
+            nominal_gdp_mean=m("nominal_gdp"), real_gdp_mean_rec=m("real_gdp"), effort_mean=m("effort_mean"),
         )
         return out
 
@@ -298,6 +323,7 @@ def main():
     aux_mean = None
     rl_full_mean = None
     per_episode = {}
+    step_rows = []
 
     print(f"[{TOOL_VERSION}] Che do policy: {'LAY MAU (explore)' if args.explore else 'TAT DINH'}; "
           f"gieo torch: {args.torch_seeding}")
@@ -325,6 +351,8 @@ def main():
                 gov_acts_all.append(gov_acts)
             if len(gdp_hist) == 0:
                 continue
+            for r_ in rec.rows:
+                step_rows.append(dict(arm=name, episode=ep, **r_))
             row = dict(gdp=float(gdp_hist.mean()), gini=float(gini_hist.mean()), unemp=float(unemp_hist.mean()),
                        deaths=int(deaths), **{k: float(v) for k, v in extra.items()}, **rec.summary())
             for k, v in row.items():
@@ -340,6 +368,12 @@ def main():
             rl_full_mean = acts.mean(axis=0).astype(np.float32)
             names_to_run += ([b + v1.RL_AUX_SUFFIX for b in v1.BASELINE_NAMES] if custom_arms is None else custom_arms)
 
+    steps_out = os.path.splitext(args.json_out)[0] + "_steps.csv.gz"
+    keys = list(dict.fromkeys(k for r_ in step_rows for k in r_))
+    with gzip.open(steps_out, "wt", newline="", encoding="utf-8") as fo:
+        w = csv.DictWriter(fo, fieldnames=keys)
+        w.writeheader()
+        w.writerows(step_rows)
     sha_after = sha256_files(integrity_paths)
     if sha_after != sha_before:
         print(f"[{TOOL_VERSION}] CANH BAO: sha256 TRUOC != SAU — file mo hinh/checkpoint bi doi trong luc chay!")
@@ -349,7 +383,7 @@ def main():
                        episode_seeding="paired", torch_seeding=args.torch_seeding, prereg_amendment="452fb00",
                        torch_seeded_calls=pairing.seeded_calls, np_state_changed_by_inference=pairing.np_state_changed_calls,
                        inference="batched" if args.batched_inference else "per_agent",
-                       provenance=v1.provenance(), argv=sys.argv,
+                       provenance=v1.provenance(), argv=sys.argv, steps_file=steps_out,
                        sha256_before=sha_before, sha256_after=sha_after, sha256_match=(sha_before == sha_after),
                        aux_mean=None if aux_mean is None else [float(x) for x in aux_mean],
                        rl_full_mean=None if rl_full_mean is None else [float(x) for x in rl_full_mean],
