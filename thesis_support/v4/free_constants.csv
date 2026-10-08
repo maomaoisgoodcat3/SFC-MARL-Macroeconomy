@@ -1,0 +1,79 @@
+name,value,default_class,unit,file_line,yaml_override,type,source_comment,note,sensitivity_swept
+num_employees,50,50,nguoi,be/scenario_config.py:34,scenarios/em_baseline.yaml,van_hanh,quy mo mo phong,quy mo mo phong,khong
+num_firms,5,5,firm,be/scenario_config.py:35,scenarios/em_baseline.yaml,van_hanh,quy mo mo phong,quy mo mo phong,co — ablation so firm/cong gia nhap KP#21 (dong 588-600)
+num_banks,1,1,bank,be/scenario_config.py:36,scenarios/em_baseline.yaml,van_hanh,,,khong (chi test SFC 2 bank)
+max_steps,240,240,buoc (thang),be/scenario_config.py:37,scenarios/em_baseline.yaml,van_hanh,20 nam,20 nam,khong
+inheritance_fraction,0.15,0.15,ty le,be/scenario_config.py:42,scenarios/em_baseline.yaml,tu_do,ty le tai san cha/me chuyen cho con khi sinh,,khong
+min_newborn_cash,500.0,500.0,tien,be/scenario_config.py:43,scenarios/em_baseline.yaml,gan_moc_quy_mo,san an sinh toi thieu cho newborn (Kho bac bu them neu thua ke chua du),"san an sinh tre so sinh; KHONG chi so hoa (KP#30 bang quet, #29c)",khong (ghi nhan KHONG CHAN)
+min_reproduction_age,22,22,nam,be/scenario_config.py:44,scenarios/em_baseline.yaml,tu_do,"tuoi lao dong da on dinh, du tu cach sinh san",,khong
+max_reproduction_age,45,45,nam,be/scenario_config.py:45,scenarios/em_baseline.yaml,tu_do,can tren do tuoi sinh san con nang dong kinh te,,khong
+min_reproduction_wealth_mult,3.0,3.0,thang chi phi song,be/scenario_config.py:46,scenarios/em_baseline.yaml,tu_do,"so thang chi phi song can du tich luy (""sugar"") de sinh san",Epstein & Axtell 1996 ('sugar'),khong
+trait_mutation_sigma,0.05,0.05,ty le,be/scenario_config.py:47,scenarios/em_baseline.yaml,tu_do,do lech chuan dot bien Gaussian quanh dac diem di truyen cha/me,,khong
+hard_min_emp,30,30,nguoi,be/scenario_config.py:48,scenarios/em_baseline.yaml,gan_moc_quy_mo,san dan so -- duoi muc nay kich hoat luoi an sinh khan cap,san luoi an sinh khan cap,khong
+hard_max_emp,200,200,nguoi,be/scenario_config.py:49,scenarios/em_baseline.yaml,gan_moc_quy_mo,tran dan so cho phep (khong doi toc do tang truong toi da/step),,khong
+hard_max_firms,25,25,firm,be/scenario_config.py:58,scenarios/em_baseline.yaml,chon_bang_thi_nghiem_co_lap,tran so luong firm dong thoi cho phep,nhanh loose_entry_v2,"co — KP#21 ablation 3 nhanh x 40 iter, 1 seed (7 vs 25)"
+firm_entry_probability,0.15,0.15,xac suat/buoc,be/scenario_config.py:64,,tu_do,xac suat gia nhap MOI BUOC khi du dieu kien,,khong
+firm_entry_unemployment_threshold,0.08,0.08,ty le,be/scenario_config.py:65,,tu_do,"nguong that nghiep kich hoat ""du lao dong""",,khong
+firm_entry_profitability_margin,0.08,0.08,ty le,be/scenario_config.py:70,scenarios/em_baseline.yaml,chon_bang_thi_nghiem_co_lap,ha nguong loi nhuan can de gia nhap,bien gia nhap 8%,co — KP#21 (0.0 vs 0.08)
+mortality_rate_floor,30,30,nguoi,be/scenario_config.py:76,,tu_do,san mau so reward Economy (METHODOLOGY_NOTES muc 3),san mau so reward Economy (METHODOLOGY_NOTES muc 3),khong
+initial_economy_buffer_fund,10000.0,10000.0,tien,be/scenario_config.py:78,,gan_moc_quy_mo,quy du tru 10 000,quy du tru 10 000,co — KP#30 bang quet hang so quy mo
+initial_treasury,25000.0,25000.0,tien,be/scenario_config.py:85,,gan_moc_quy_mo,Kho bac 25 000 (sau cap von khoi tao),Kho bac 25 000 (sau cap von khoi tao),"co — KP#29c: 25k vs 60k vs 1e6, rho 0.5/1 (KP dong 1189-1197; nguon so V6 KHONG TIM THAY)"
+treasury_funds_initial_endowments,False,False,bool,be/scenario_config.py:89,,van_hanh,True = logic cu (KP#29c),True = logic cu (KP#29c),khong
+government_reward_mode,eq_x_prod,eq_x_prod,-,be/scenario_config.py:92,,van_hanh,eq_x_prod (Zheng et al. 2022),eq_x_prod (Zheng et al. 2022),khong
+swf_reward_scale,0.02,0.02,he so,be/scenario_config.py:93,,tu_do,HE SO CHUAN HOA TU DO HIEU CHINH (dua Eq x Prod ~250 -> ~5/buoc),chuan hoa Eq×Prod ~250 -> ~5/buoc,khong (CLAUDE.md: KHONG CHAN)
+initial_lending_rate,0.12,0.06,/nam,be/scenario_config.py:96,scenarios/em_baseline.yaml,lay_tu_nguon,6%/nam,IMF Financial Access Survey 2023 (em_baseline.yaml),khong
+initial_deposit_rate,0.05,0.02,/nam,be/scenario_config.py:97,scenarios/em_baseline.yaml,lay_tu_nguon,2%/nam,World Bank GFDD 2023 (em_baseline.yaml),khong
+gini_penalty_coef,25.0,25.0,he so,be/scenario_config.py:100,scenarios/em_baseline.yaml,tu_do,Government.calculate_reward -- phat Gini^2,chi dung o reward_mode legacy,khong
+death_penalty_coef,20.0,20.0,/ca chet,be/scenario_config.py:101,scenarios/em_baseline.yaml,tu_do,Government.calculate_reward -- phat moi ca tu vong,nang 5 -> 20 sau quan sat log (government.py docstring),khong co quet he thong
+npl_flow_penalty_coef,0.06,0.06,he so,be/scenario_config.py:102,scenarios/em_baseline.yaml,tu_do,Bank.calculate_reward -- phat no xau MOI phat sinh,nang 0.02 -> 0.06 sau quan sat (bank.py docstring),khong
+npl_stock_penalty_coef,50.0,50.0,he so,be/scenario_config.py:103,scenarios/em_baseline.yaml,tu_do,Bank.calculate_reward -- phat theo TY LE ton kho NPL/tong du no,,khong
+npl_writeoff_months,6,6,thang,be/scenario_config.py:104,scenarios/em_baseline.yaml,lay_tu_nguon,"Bank.apply_result -- so thang no xau duoc ""mo"" truoc khi write-off (IFRS 9 / Basel NPL staging, xem bank.py)",IFRS 9 / Basel NPL (comment; chua doi chieu dieu khoan — A4),khong
+bank_failure_criterion,equity,equity,-,be/scenario_config.py:108,,van_hanh,equity (KP#28),equity (KP#28),khong
+bank_failure_floor,100000.0,100000.0,tien,be/scenario_config.py:109,,gan_moc_quy_mo,nguong dung sai von/reserves am truoc khi tuyen vo no (HE SO TU DO HIEU CHINH),nguong pha san ngan hang 100 000,khong
+emp_death_penalty_base,100.0,100.0,reward,be/scenario_config.py:110,scenarios/em_baseline.yaml,tu_do,"Employee.calculate_reward -- muc phat tu vong goc (ratio=0, tuc chet dung luc max_age)",,khong
+emp_death_penalty_horizon_multiplier,1.0,1.0,he so,be/scenario_config.py:111,scenarios/em_baseline.yaml,tu_do,"Employee.calculate_reward -- he so nhan them theo ty le quang doi con lai (Viscusi & Aldy VSL), xem rule_engine.py Section 9",Viscusi & Aldy (comment),khong
+reward_scale_employee,0.045,0.045,he so,be/scenario_config.py:117,scenarios/em_baseline.yaml,tu_do,"chuan hoa reward (KP#5, #12)","chuan hoa reward (KP#5, #12)",khong
+reward_scale_firm,0.018,0.018,he so,be/scenario_config.py:118,scenarios/em_baseline.yaml,tu_do,,,khong
+reward_scale_government,0.04,0.04,he so,be/scenario_config.py:119,scenarios/em_baseline.yaml,tu_do,,,khong
+reward_scale_bank,0.04,0.04,he so,be/scenario_config.py:120,scenarios/em_baseline.yaml,tu_do,,,khong
+reward_scale_supervisor,0.012,0.012,he so,be/scenario_config.py:121,scenarios/em_baseline.yaml,tu_do,,,khong
+reward_scale_economy,0.02,0.02,he so,be/scenario_config.py:122,scenarios/em_baseline.yaml,tu_do,,,khong
+reward_clip,100.0,100.0,reward,be/scenario_config.py:123,scenarios/em_baseline.yaml,van_hanh,san/tran an toan SAU chuan hoa; env tu tu choi cau hinh clip < hinh phat tu vong toi da,env tu choi neu cat mat phat tu vong,khong
+subsistence_indexation_ceiling_mult,3.0,3.0,x initial_living_cost,be/scenario_config.py:126,scenarios/em_baseline.yaml,gan_moc_quy_mo,boi so cua initial_living_cost; xem rule_engine.py,tran chi so hoa 3x,co — KP#2/#8 (1e9 tai hien loi; do he so khuech dai)
+initial_living_cost,6.0,6.0,tien/thang,be/scenario_config.py:129,scenarios/em_baseline.yaml,chon_bang_thi_nghiem_co_lap,"gia sinh hoat luc reset(); DO thuc nghiem (khong suy doan), truoc day hardcode=20 gay cu soc gia dau episode",DO thuc nghiem (truoc 20 -> soc; KP#10),co — KP#10 (20 vs 6)
+initial_employment_rate,0.9,0.9,ty le,be/scenario_config.py:130,scenarios/em_baseline.yaml,tu_do,"ty le dan so co viec lam san luc reset(); con lai la that nghiep ma sat (Mortensen & Pissarides, 1994 -- ty le cu the la calibration)",Mortensen & Pissarides 1994 (comment),co — KP#10 (0.0 vs 0.9)
+mrpl_scale_constant,0.38,0.38,he so,be/scenario_config.py:133,scenarios/em_baseline.yaml,chon_bang_thi_nghiem_co_lap,giai dai so tu dieu kien can bang wage/price; dat 1.0 de tai hien lech chuan dinh co CU (xem KNOWN_PATHOLOGIES.md muc #8),quet 3 chi so dong thoi (rule_engine.py:147-176),co — KP#8 (1.0 tai hien loi; 0.38 chon qua quet)
+wage_renegotiation_prob,0.12,0.12,xac suat/thang,be/scenario_config.py:139,scenarios/em_baseline.yaml,chon_bang_thi_nghiem_co_lap,Taylor 1980; Calvo 1983,Taylor 1980; Calvo 1983,co — KP#24 dose-response 4 seed (0 vs 0.12; de nghi them 0.06)
+shirking_monitor_prob,0.05,0.05,xac suat/thang,be/scenario_config.py:146,,tu_do,q: xac suat/thang bi giam sat & phat hien neu lam luoi (HE SO TU DO HIEU CHINH),Shapiro & Stiglitz 1984,co — KP#27 (q=0 vs 0.05; test_effort_has_private_benefit_only_with_monitoring)
+shirking_effort_threshold,0.5,0.5,effort,be/scenario_config.py:147,,tu_do,"ebar: effort < nguong = ""lam luoi"" (HE SO TU DO HIEU CHINH; 0.5 = trung binh policy ngau nhien)",,khong
+effort_signal_noise_sigma,0.1,0.1,do lech chuan,be/scenario_config.py:148,,tu_do,do lech chuan nhieu trong tin hieu effort Firm quan sat (Holmstrom 1979; HE SO TU DO HIEU CHINH),Holmstrom 1979,khong
+subsidy_funding_rule,affordable,affordable,-,be/scenario_config.py:155,,van_hanh,affordable (KP#30b),affordable (KP#30b),khong
+buffer_stock_rule,band_scaled,band_scaled,-,be/scenario_config.py:159,,van_hanh,band_scaled (KP#31),band_scaled (KP#31),khong
+buffer_max_market_share,0.15,0.15,ty le,be/scenario_config.py:160,,tu_do,kappa -- HE SO TU DO HIEU CHINH,kappa,"co — KP#31 test hoi quy (logic cu vs moi), khong quet kappa"
+buffer_price_band,0.05,0.05,ty le,be/scenario_config.py:161,,tu_do,+-5% quanh gia tham chieu -- HE SO TU DO HIEU CHINH,+-5%,khong
+buffer_reference_halflife_months,12.0,12.0,thang,be/scenario_config.py:162,,tu_do,chu ky ban ra EMA gia tham chieu -- HE SO TU DO HIEU CHINH,EMA ban ra 12,khong
+shirker_rehire_lockout_months,9,9,thang,be/scenario_config.py:163,,chon_bang_thi_nghiem_co_lap,HE SO TU DO HIEU CHINH (do truc tiep: L=6 gap khuyen khich=+0.34+-0.36 KHONG co y nghia; L=9 -> +1.91+-0.60; KNOWN_PATHOLOGIES.md #27),Gibbons & Katz 1991,"co — KP#27: L=6 gap +0.34±0.36 (khong y nghia), L=9 +1.91±0.60 (16 seed)"
+ALPHA_CAPITAL (so mu von),0.3,(viet cung),-,be/rule_engine.py:280,,tu_do,ALPHA_CAPITAL = 0.3,Cobb-Douglas,khong
+BETA_LABOR (so mu lao dong),0.6,(viet cung),-,be/rule_engine.py:286,,lay_tu_nguon,BETA_LABOR = 0.6,ty trong thu nhap lao dong quan sat (comment),khong
+THETA_CALVO,0.70,(viet cung),-,be/rule_engine.py:1006,,lay_tu_nguon,THETA_CALVO = 0.70,Calvo 1983 (gia tri chuan DSGE),do he so khuech dai (test) — khong quet
+he so san luong phi chinh thuc,0.35,(viet cung),x skill,be/rule_engine.py:617,,tu_do,e.agent_id: 0.35 * e.skill_level for e in unemployed_emps,'du song thoi thop',khong (de xuat B cho #32)
+HAIRCUT_LIQUIDATION,0.30,(viet cung),ty le,be/rule_engine.py:1420,,tu_do,HAIRCUT_LIQUIDATION = 0.30,Merton 1974 (dang ham); 0.30 tu do,khong
+dieu kien thuê: thanh khoan > k x gia,1.2,(viet cung),x gia,be/rule_engine.py:343,,tu_do,if available_liquidity > (expected_price * 1.2) and unemployed and hire_signal > -0.1:,,khong
+tran tuyen/thang,"max(2, ceil(0.25 h))",(viet cung),nguoi,be/rule_engine.py:340,,tu_do,"MAX_HIRES_PER_MONTH = max(2, int(np.ceil(0.25 * current_headcount)))",,khong
+dieu kien nhan tro cap,0.8 x actual_living_cost,(viet cung),x chi phi song,be/rule_engine.py:1127,,tu_do,if current_cash_est < (0.8 * actual_living_cost) and legacy_gate_open:,,khong
+lich tro cap thang 4-6,0.375,(viet cung),x relief,be/rule_engine.py:1132,,tu_do,relief_amount = relief_level * actual_living_cost if streak <= 3 else (0.375 * relief_level * actual_living_cost if streak <= 6 else 0.0),ty le 0.15/0.40 cu,khong
+bien do bom cau,+-0.20,(viet cung),x tong cau sinh ton,be/agents/government.py:194,,tu_do,"demand_injection_ratio = float(np.clip(vals[3], -0.20, 0.20))",giu tu thiet ke v0.22,khong
+tran thue TNCN/DN,0.50,(viet cung),ty le,be/agents/government.py:182,,tu_do,"worker_tax = float(np.clip(vals[0], 0.0, 0.50))",'hien phap',khong
+tra no cong/buoc,0.5 x Kho bac,(viet cung),ty le,be/agents/government.py:273,,tu_do,"repayment = min(self.treasury * 0.5, self.public_debt)",,khong
+phat no cong (reward Gov),0.00005,(viet cung),/don vi no,be/agents/government.py:325,,tu_do,debt_penalty = (self.public_debt * 0.00005) if self.public_debt > 0 else 0.0,,khong
+K_SURVIVAL (reward Economy),1700,(viet cung),he so,be/agents/economy.py:296,,tu_do,K_SURVIVAL = 1700.0,khop thang dead_worker_penalty cu (~20),khong
+K_BIRTH (reward Economy),4000,(viet cung),he so,be/agents/economy.py:335,,chon_bang_thi_nghiem_co_lap,K_BIRTH = 4000.0,"1e6 -> vf_ev ~0 (KP#19, dong 265-271)",co — 2 lan huan luyen (1e6 vs 4000)
+muc tieu ty le sinh,0.0033,(viet cung),/nguoi/buoc,be/agents/economy.py:336,,tu_do,target_birth_rate = 0.0033  # ~khớp Births~0.25/step tại dan so ~75 quan sat trong log gan day,khop log (~0.25/buoc o dan so ~75),khong
+muc tieu lam phat (reward Economy),0.0016,(viet cung),/thang,be/agents/economy.py:278,,tu_do,inflation_penalty = 50.0 * ((self.inflation_rate - 0.0016) ** 2),Svensson 1997 (dang ham),khong
+he so phat lam phat,50,(viet cung),he so,be/agents/economy.py:278,,tu_do,inflation_penalty = 50.0 * ((self.inflation_rate - 0.0016) ** 2),,khong
+reward Firm: profit x,0.1,(viet cung),he so,be/agents/firm.py:199,,tu_do,profit_reward = self.last_profit * 0.1,,khong
+reward Firm: thuong quan so,0.5/nguoi,(viet cung),/nhan vien,be/agents/firm.py:215,,tu_do,headcount_bonus = (float(len(self.employee_ids)) * 0.5) if self.last_profit > 0.0 else 0.0,Mortensen & Pissarides 1994 (comment) — KP#35,khong
+reward Worker: he so log tieu dung,2.0,(viet cung),he so,be/agents/employee.py:270,,tu_do,u_consumption = float(np.log(consumption)) * 2.0,,khong
+reward Worker: tran phat that nghiep,8.0 (2+0.5 streak),(viet cung),reward,be/agents/employee.py:279,,tu_do,"unemployment_penalty = min(2.0 + (0.5 * self.unemployed_streak), 8.0)",,khong
+PPO vf_clip_param,2000,(viet cung),-,be/rllib_wrapper.py:251,,chon_bang_thi_nghiem_co_lap,PPO_VF_CLIP_PARAM: float = 2000.0,500 -> critic khong hoc (KP#12),co — KP#12 (500 vs 2000)
+PPO lr / epoch / grad_clip,3e-4 / 10 / 0.5,(viet cung),-,be/rllib_wrapper.py:253,,van_hanh,PPO_LR: float = 3e-4,,khong

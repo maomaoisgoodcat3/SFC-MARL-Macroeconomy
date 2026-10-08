@@ -136,6 +136,39 @@ bảng + H1–H4 TRÙNG `flat_sweep_table.md`. Bảng mean^{{±std}} (đơn vị
 ```
 {tail("audits/paper_extras/v4_runs/queue_v1.log")}```
 
+## 7b. P0.3 — bench-v2.1 (G_P, quy tắc bất đồng, SD_v2/SD_v1, ghép cặp a/b/c)
+
+{rd(f"{V4}/v2_report.md")}
+## 7c. P0.8 — Cuối chân trời
+
+{rd(f"{V4}/horizon_report.md")}
+## 7d. A5 (P1.1) — Hằng số tự do (`free_constants.csv`, 78 dòng; số dòng mã dò tự động, bỏ qua dòng comment)
+
+{csv_md(f"{V4}/free_constants.csv", ["name", "value", "unit", "file_line", "type", "note", "sensitivity_swept"])}
+## 7e. Trả lời: số liệu lần chạy 500 iteration (thất nghiệp 48–82%, 170–270 ca chết/episode, giá 17–220) là gì?
+
+KHÔNG lấy từ dòng [TRAIN]. Chúng từ các script ĐÁNH GIÁ trên checkpoint `official_baseline_v1/iter_500`, policy TẤT ĐỊNH, 240 bước
+(`audits/2026-09-26/audit_explore.py`, 3 episode, seed reset 500–502; `audits/2026-09-26/audit_diagnostics.py`):
+- **170–270 ca chết/episode** = TỔNG ca chết trong episode (`env.gov.dead_citizens_count` cuối episode, `audit_explore.py:46`), khoảng
+  min–max qua 3 episode.
+- **Thất nghiệp 48–82%** = TRUNG BÌNH MỌI BƯỚC của tỷ lệ Employee ACTIVE không có việc trong từng episode (`audit_explore.py:44,46`),
+  khoảng min–max qua 3 episode.
+- **Giá 17–220** (gốc 6): giá = `eco.base_living_cost`. `audit_explore.py:45,47` ghi TRUNG BÌNH MỌI BƯỚC theo episode; `audit_diagnostics.py`
+  in min/max theo TỪNG BƯỚC. Đầu ra hai script KHÔNG được lưu → **không xác định chắc** 17–220 là khoảng các trung bình episode hay
+  min–max theo bước. Không chạy lại được: checkpoint `official_baseline_v1` không nạp được với mã hiện tại (obs/action đã đổi — CLAUDE.md).
+  Khuyến nghị viết: "giá trung bình episode/giá theo bước dao động trong khoảng 17–220 (gấp ~3–37 lần giá gốc 6)" kèm chú thích nguồn.
+
+## 7f. File gửi Claude Web (ngoài báo cáo này) — tất cả trong `thesis_support/v4/` (đã commit) trừ khi ghi khác
+
+- Dữ liệu: `bench_v1_episodes.csv`, `sweep_v1_episodes.csv`, `bench_v1_seed_summary.csv`, `seeds_gate.csv`, `learning_curves.csv`,
+  `effort_histograms.csv`, `checkpoints_sha256.csv`, `metric_semantics.csv`, `free_constants.csv`.
+- Đầu ra `make_tables.py`: `tables_v1.tex`, `tables_v1.md`, `agg_benchmark_{{orig3,repl6,all9}}.md`, `agg_flat_sweep_{{orig3,repl6,all9}}.md`.
+- Đầu ra `analyze_v2.py`: `bench_v2_episodes.csv`, `v2_comparisons.csv`, `v2_variance_reduction.csv`, `v2_report.md`.
+- Đầu ra `analyze_horizon.py`: `horizon_episodes.csv`, `horizon_eqprod.csv`, `horizon_report.md`.
+- Kiểm toán: `P0_5_formula_audit.md`, `P0_6_P0_7_audit.md`, `gini_negative_check_output.txt`, `MANIFEST.md`.
+(File .md không có trong repo code — lấy ở máy hoặc repo Documents `TheAIEconomist/project_docs/v4/`.)
+Lưu ý: "v2" và "v2.1" là CÙNG một phép đo (v2.1 chỉ thêm đầu ra theo bước, tất định trùng v1 từng số); chỉ chạy một lần v2.1.
+
 ## 8. Lệnh tái lập (bản hiện tại — P2.5 hoàn chỉnh sau)
 
 ```
