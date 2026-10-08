@@ -1,0 +1,9 @@
+N = 50; 49 gia tri lognormal(0,1)×100 (rng(0)), TB = 164.97
+     d  Gini tinh tien (ma)   G_P Raffinetti   Gini ma, khong co d (N=49)
+   -10               0.4542           0.4909                       0.4699
+  -300               0.1834           0.5085                       0.4699
+
+Bang 3 Raffinetti et al. (2015) — tai tao G_P:
+  (a) G_P = 0.5556 (bai: 0.5556) | Gini tinh tien cua ma = 0.9000
+  (b) G_P = 1.0000 (bai: 1.0) | Gini tinh tien cua ma = 0.1800
+  (c) G_P = 0.8346 (bai: 0.8346) | Gini tinh tien cua ma = 0.4507
