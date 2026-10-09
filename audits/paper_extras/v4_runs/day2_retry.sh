@@ -27,4 +27,17 @@ for S in 42 202 303 404 505 606 707 808 909; do for M in det exp; do
     --episodes 10 --max-steps 240 --batched-inference $EX --arms "$V2ARMS" --json-out $J > $OUT/v2/bench2_seed${S}_${M}.log 2>&1
   echo "== CHAY LAI v2 seed $S $M xong rc=$? $(grep -a -o 'sha256 truoc/sau trung: [A-Za-z]*' $OUT/v2/bench2_seed${S}_${M}.log) $(date '+%T')" >> $LOG
 done; done
+C=$OUT/checks
+if [ ! -s $C/pairing_coverage_seed42.csv ]; then
+  echo "== CHAY LAI P0.3a bat dau $(date '+%T')" >> $LOG
+  python audits/paper_extras/pairing_coverage_v2.py --checkpoint be/checkpoint/final_v037_seed42/iter_100 --episodes 2     --csv-out $C/pairing_coverage_seed42.csv > $C/pairing_coverage_seed42.log 2>&1
+  echo "== CHAY LAI P0.3a xong rc=$? $(date '+%T')" >> $LOG
+fi
+if [ ! -f $C/order_reversed_seed42_exp.json ]; then
+  REV=$(echo $V2ARMS | tr ',' '
+' | tac | paste -sd, -)
+  echo "== CHAY LAI P0.3c bat dau $(date '+%T')" >> $LOG
+  python audits/paper_extras/benchmark_v2.py --config scenarios/em_baseline.yaml --checkpoint be/checkpoint/final_v037_seed42/iter_100     --episodes 10 --max-steps 240 --batched-inference --explore --arms "$REV" --json-out $C/order_reversed_seed42_exp.json > $C/order_reversed_seed42_exp.log 2>&1
+  echo "== CHAY LAI P0.3c xong rc=$? $(date '+%T')" >> $LOG
+fi
 echo "== retry XONG $(date '+%F %T')" >> $LOG
