@@ -209,6 +209,12 @@ def main():
                     f"sys.argv = ['x', '--boot', '{a.boot}', '--md-out', r'{os.path.abspath(OUT)}/agg_flat_sweep_{setname}.md']; A.main()")
             subprocess.run([sys.executable, "-c", code], check=True, capture_output=True)
             shutil.rmtree(stage)
+            # aggregate_flat_sweep.py viet cung NHAN "3 seed" / "42 / 202 / 303" (so lieu tinh tren A.SEEDS dung) -> sua NHAN, khong doi so
+            fp = f"{OUT}/agg_flat_sweep_{setname}.md"
+            t = open(fp, encoding="utf-8").read()
+            t = t.replace("— 3 seed x 10 episode ghep cap", f"— {len(sw)} seed x 10 episode ghep cap")
+            t = t.replace("theo seed 42 / 202 / 303", "theo seed " + " / ".join(map(str, sw)))
+            open(fp, "w", encoding="utf-8").write(f"<!-- bo seed {setname}: {sw} (nhan da sua bang make_tables.py; so lieu tu aggregate_flat_sweep.py) -->\n" + t)
     open(f"{OUT}/tables_v1.md", "w", encoding="utf-8").write("\n".join(md) + "\n")
     open(f"{OUT}/tables_v1.tex", "w", encoding="utf-8").write("\n".join(tex) + "\n")
     print(f"ok: {len(rows7)} dong 7 nhanh, {len(rowsw)} dong quet; seed det {have['det']} exp {have['exp']}")
