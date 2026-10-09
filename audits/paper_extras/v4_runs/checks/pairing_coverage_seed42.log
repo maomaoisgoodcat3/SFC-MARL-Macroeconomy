@@ -1,0 +1,26 @@
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2026-10-09 14:40:28,093	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+2026-10-09 14:40:30,270	INFO worker.py:1781 -- Started a local Ray instance.
+2026-10-09 14:40:31,912	INFO trainable.py:583 -- Restored on 127.0.0.1 from checkpoint: Checkpoint(filesystem=local, path=be/checkpoint/final_v037_seed42/iter_100)
+[BENCHMARK] Da nap checkpoint: be/checkpoint/final_v037_seed42/iter_100
+free_market            TB=0.900  buoc 0-19=0.993  buoc 220-239=0.856
+us_federal             TB=0.911  buoc 0-19=0.993  buoc 220-239=0.870
+saez                   TB=0.193  buoc 0-19=0.996  buoc 220-239=0.064
+free_market+rl_aux     TB=0.906  buoc 0-19=0.993  buoc 220-239=0.865
+us_federal+rl_aux      TB=0.927  buoc 0-19=0.987  buoc 220-239=0.883
+saez+rl_aux            TB=0.244  buoc 0-19=0.992  buoc 220-239=0.064
+rl_mean_fixed          TB=0.895  buoc 0-19=0.989  buoc 220-239=0.895
+flat_pit0.10_cit0      TB=0.909  buoc 0-19=0.995  buoc 220-239=0.855
+flat_pit0_cit0.30      TB=0.957  buoc 0-19=0.993  buoc 220-239=0.951
+da ghi audits/paper_extras/v4_runs/checks/pairing_coverage_seed42.csv

@@ -142,6 +142,20 @@ bảng + H1–H4 TRÙNG `flat_sweep_table.md`. Bảng mean^{{±std}} (đơn vị
 ## 7c. P0.8 — Cuối chân trời
 
 {rd(f"{V4}/horizon_report.md")}
+### Kiểm thêm (09/10): đây là XU HƯỚNG TRONG EPISODE, không phải hành vi cuối chân trời
+
+```
+{rd(f"{V4}/P0_8_trend_check.txt")}```
+
+**Kết luận (Claude Code, khám phá — không phải kiểm định đăng ký trước):** (1) quan sát không chứa thời gian → policy không "biết" sắp hết
+episode; (2) giá giảm ĐỀU suốt episode và chạm sàn 1.00 trước bước 220 ở hầu hết seed (giảm phát tới sàn, #30c), dân số sống tăng ~50 → ~105–115,
+Gini tài sản theo dạng CHUÔNG (≈0.11 lúc đầu → 0.6–0.8 giữa episode → ≈0.36–0.45 cuối) — cùng hình dạng ở nhánh `free_market` (Government cố
+định); (3) vì vậy chênh lệch "20 bước cuối vs 1–220" chủ yếu phản ánh xu hướng dài hạn, đóng góp TB vào Eq×Prod ≈ +1.7% (tất định) / +2.3%
+(lấy mẫu) ở rl_learned, xấp xỉ free_market (+1.9% / +2.3%) → gần như không đổi so sánh giữa nhánh; (4) ngoại lệ: seed 909 (Gini TĂNG ở cuối,
+0.57 → 0.69/0.72, đóng góp −2.2%/−2.6%) và seed 404 lấy mẫu (GDP thực tăng 951 → 1142, giá 4.39 → 1.39 ở 20 bước cuối) — trùng với hai seed có
+"hiện tượng cuối iteration" trong log huấn luyện. **Đề xuất #37 (sau đóng băng, không sửa):** "Quỹ đạo KHÔNG DỪNG trong episode — giảm phát
+tới sàn giá trước ~bước 150–220, dân số ×2, Gini hình chuông; Eq×Prod trung bình episode trộn các chế độ này" (liên quan #30c). Không đề xuất
+mục riêng cho "hiệu ứng cuối chân trời" vì không có bằng chứng (trừ 2 ngoại lệ 909/404 — nên nêu như quan sát).
 ## 7d. A5 (P1.1) — Hằng số tự do (`free_constants.csv`, 78 dòng; số dòng mã dò tự động, bỏ qua dòng comment)
 
 {csv_md(f"{V4}/free_constants.csv", ["name", "value", "unit", "file_line", "type", "note", "sensitivity_swept"])}

@@ -1,0 +1,37 @@
+[bench-v2.1] self-test G_P: DAT (Bang 3 Raffinetti 2015; G_P = Gini x N/(N-1) khi khong am; bien)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2026-10-09 12:14:18,299	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+2026-10-09 12:14:20,237	INFO worker.py:1781 -- Started a local Ray instance.
+2026-10-09 12:14:21,804	INFO trainable.py:583 -- Restored on 127.0.0.1 from checkpoint: Checkpoint(filesystem=local, path=be/checkpoint/final_v037_seed505/iter_100)
+[BENCHMARK] Da nap checkpoint: be/checkpoint/final_v037_seed505/iter_100
+[bench-v2.1] Che do policy: TAT DINH; gieo torch: step_policy
+
+Nhanh                       GDP  1-Gini   1-GPw  1-GPnet   1-GPc  %buoc am    k/N
+rl_learned               863.69   0.509   0.503    0.503   0.843      0.0%  0.000
+free_market              864.87   0.516   0.510    0.510   0.844      0.0%  0.000
+us_federal               860.64   0.444   0.408    0.403   0.844     75.7%  0.106
+saez                     646.18   0.317   0.359    0.332   0.753     94.6%  0.725
+free_market+rl_aux       867.71   0.516   0.510    0.510   0.845      0.0%  0.000
+us_federal+rl_aux        882.77   0.386   0.355    0.352   0.822     75.5%  0.112
+saez+rl_aux              780.11   0.224   0.228    0.248   0.660     94.2%  0.690
+rl_mean_fixed            871.11   0.504   0.498    0.498   0.841      0.0%  0.000
+flat_pit0.10_cit0        867.97   0.396   0.364    0.360   0.819     73.7%  0.109
+flat_pit0.20_cit0        853.43   0.294   0.285    0.257   0.784     85.6%  0.326
+flat_pit0.30_cit0        811.51   0.258   0.311    0.267   0.747     89.3%  0.541
+flat_pit0.50_cit0        679.01   0.271   0.332    0.309   0.677     92.0%  0.704
+flat_pit0_cit0.10        870.07   0.507   0.501    0.501   0.842      0.0%  0.000
+flat_pit0_cit0.20        876.41   0.510   0.504    0.504   0.844      0.0%  0.000
+flat_pit0_cit0.30        891.66   0.496   0.490    0.490   0.842      0.0%  0.000
+flat_pit0_cit0.50        951.79   0.457   0.451    0.451   0.838      0.0%  0.000
+[bench-v2.1] Da ghi: audits/paper_extras/v4_runs/v2/bench2_seed505_det.json (sha256 truoc/sau trung: True)

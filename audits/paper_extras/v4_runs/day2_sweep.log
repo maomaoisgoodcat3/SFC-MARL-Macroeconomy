@@ -1,0 +1,33 @@
+== sweep BAT DAU 2026-10-09 09:24:10 commit cf8c88c
+== quet seed 404 exp bat dau 09:24:10
+== quet seed 404 exp xong rc=0 nap=1 09:40:35
+== quet seed 505 det bat dau 09:40:35
+== quet seed 505 det xong rc=0 nap=1 09:56:33
+== quet seed 505 exp bat dau 09:56:33
+== quet seed 505 exp xong rc=0 nap=1 10:12:30
+== quet seed 606 det bat dau 10:12:30
+== quet seed 606 det xong rc=0 nap=1 10:27:59
+== quet seed 606 exp bat dau 10:28:00
+== quet seed 606 exp xong rc=0 nap=1 10:43:38
+== quet seed 707 det bat dau 10:43:38
+== quet seed 707 det xong rc=0 nap=1 10:59:43
+== quet seed 707 exp bat dau 10:59:43
+== quet seed 707 exp xong rc=0 nap=1 11:15:54
+== quet seed 808 det bat dau 11:15:54
+== quet seed 808 det xong rc=0 nap=1 11:31:57
+== quet seed 808 exp bat dau 11:31:57
+== quet seed 808 exp xong rc=127 nap=0 12:45:04
+== quet seed 909 det bat dau 12:45:04
+== quet seed 909 det xong rc=1 nap=0 12:45:18
+== quet seed 909 exp bat dau 12:45:18
+== quet seed 909 exp xong rc=0 nap=1 13:01:33
+== quet XONG 13:01:33 -> giup v2.1 tu cuoi danh sach
+== v2 seed 909 exp bat dau 13:01:34
+== v2 seed 909 exp xong rc=0 sha256 truoc/sau trung: True 13:28:39
+== v2 seed 909 det bat dau 13:28:39
+== v2 seed 909 det xong rc=1  13:28:50
+== v2 seed 808 exp bat dau 13:28:50
+== v2 seed 808 exp xong rc=0 sha256 truoc/sau trung: True 13:56:58
+== v2 seed 808 det bat dau 13:56:58
+== v2 seed 808 det xong rc=0 sha256 truoc/sau trung: True 14:23:00
+== sweep XONG 2026-10-09 14:23:00

@@ -1,0 +1,21 @@
+[bench-v2.1] self-test G_P: DAT (Bang 3 Raffinetti 2015; G_P = Gini x N/(N-1) khi khong am; bien)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2026-10-09 13:28:47,373	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+[2026-10-09 13:28:48,441 W 42516 2744] gcs_client.cc:178: Failed to get cluster ID from GCS server: RpcError: RPC Error message: ; RPC Error details: 
+[2026-10-09 13:28:49,530 W 42516 2744] gcs_client.cc:178: Failed to get cluster ID from GCS server: RpcError: RPC Error message: ; RPC Error details: 
+[BENCHMARK] KHONG nap duoc checkpoint (Failed to start GCS.  Last 1 lines of error files:
+[2026-10-09 13:28:48,490 C 23248 45748] (gcs_server.exe) grpc_server.cc:124:  Check failed: server_ Failed to start the grpc server. The specified port is 65178. This means that Ray's core components will not be able to function correctly. If the server startup error message is `Address already in use`, it indicates the server fails to start because the port is already used by other processes (such as --node-manager-port, --object-manager-port, --gcs-server-port, and ports between --min-worker-port, --max-worker-port). Try running sudo lsof -i :65178 to check if there are other processes listening to the port.
+
+.Please check C:\Users\piece\AppData\Local\Temp\ray\session_2026-10-09_13-28-48_370912_42516\logs\gcs_server.out for details. Last connection error: None) -- dung heuristic cho tat ca tac tu.
+[bench-v2.1] KHONG nap duoc checkpoint -> dung (v2 chi dung cho checkpoint that).

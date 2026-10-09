@@ -1,0 +1,42 @@
+[BENCHMARK] Da doc ScenarioConfig tu: scenarios/em_baseline.yaml (GHI DE toan bo --num-employees/--num-firms/--hard-max-firms/--initial-lending-rate/--initial-deposit-rate)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2026-10-09 10:43:44,566	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+2026-10-09 10:43:47,549	INFO worker.py:1781 -- Started a local Ray instance.
+2026-10-09 10:43:50,271	INFO trainable.py:583 -- Restored on 127.0.0.1 from checkpoint: Checkpoint(filesystem=local, path=be/checkpoint/final_v037_seed707/iter_100)
+[BENCHMARK] Da nap checkpoint: be/checkpoint/final_v037_seed707/iter_100
+[BENCHMARK] Che do policy: TAT DINH (explore=False)
+
+Baseline              Productivity(GDP)   Equality(1-Gini)    Eq x Prod  Deaths/ep   Unemp
+-----------------------------------------------------------------------------------------
+rl_learned                885.01+/-26.02       0.433+/-0.047       383.04        0.0   0.003
+                   (trung binh cong cu phu RL [rho, bom cau, tro cap] = [ 0.903 -0.032  0.528] -> dung cho cac nhanh '+rl_aux')
+                   (trung binh CA 5 cong cu RL = [ 0.     0.207  0.903 -0.032  0.528] -> dung cho 'rl_mean_fixed')
+free_market+rl_aux        863.79+/-25.50       0.444+/-0.046       383.61        0.0   0.003
+rl_mean_fixed             879.75+/-27.89       0.434+/-0.036       382.21        0.0   0.003
+flat_pit0.10_cit0         860.56+/-26.14       0.337+/-0.041       289.94        0.0   0.003
+flat_pit0.20_cit0         870.19+/-51.38       0.249+/-0.026       216.69        0.3   0.003
+flat_pit0.30_cit0         860.39+/-49.01       0.256+/-0.045       219.88        8.0   0.003
+flat_pit0.50_cit0         694.25+/-54.43       0.206+/-0.018       142.84       47.9   0.004
+flat_pit0_cit0.10         879.41+/-33.71       0.442+/-0.041       388.59        0.0   0.003
+flat_pit0_cit0.20         882.52+/-28.44       0.439+/-0.035       387.14        0.0   0.003
+flat_pit0_cit0.30         892.73+/-37.40       0.424+/-0.042       378.68        0.0   0.003
+flat_pit0_cit0.50         906.33+/-30.52       0.430+/-0.037       389.33        0.0   0.003
+[BENCHMARK] Da ghi so lieu tung episode: audits/paper_extras/v4_runs/v1/sweep_seed707_det.json
+
+[BENCHMARK] Luu y: neu khong truyen --checkpoint hop le, day CHUA phai so sanh
+'RL da hoc' vs 'rule-based' that su -- moi tac tu khac Government deu dung heuristic,
+nen bang tren chi cho biet BAN THAN 3 bieu thue khac nhau the nao duoi CUNG mot moi
+truong heuristic co dinh, chua danh gia duoc gia tri gia tang cua RL.
+[BENCHMARK] Nhanh 'rl_learned': Government dung CHINH policy RL da hoc (khong ep baseline nao)
+-- day moi la phep so sanh RL-vs-rule-based that su theo dung cau hoi trung tam cua khoa luan.

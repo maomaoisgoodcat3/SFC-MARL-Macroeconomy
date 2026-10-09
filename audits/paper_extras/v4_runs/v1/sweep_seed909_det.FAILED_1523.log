@@ -1,0 +1,30 @@
+[BENCHMARK] Da doc ScenarioConfig tu: scenarios/em_baseline.yaml (GHI DE toan bo --num-employees/--num-firms/--hard-max-firms/--initial-lending-rate/--initial-deposit-rate)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\rllib\algorithms\algorithm.py:557: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2026-10-09 12:45:10,642	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+2026-10-09 12:45:13,852	INFO worker.py:1781 -- Started a local Ray instance.
+[33m(raylet)[0m The node with node id: 2b3889e57fce03696a5beafa542097b544de9227f52d7227a08b7e38 and address: 127.0.0.1 and node name: 127.0.0.1 has been marked dead because the detector has missed too many heartbeats from it. This can happen when a 	(1) raylet crashes unexpectedly (OOM, etc.) 
+	(2) raylet has lagging heartbeats due to slow network or busy workload.
+[33m(raylet)[0m [2026-10-09 12:45:16,652 E 23696 45788] (raylet.exe) agent_manager.cc:83: The raylet exited immediately because one Ray agent failed, agent_name = runtime_env_agent.
+[33m(raylet)[0m The raylet fate shares with the agent. This can happen because
+[33m(raylet)[0m - The version of `grpcio` doesn't follow Ray's requirement. Agent can segfault with the incorrect `grpcio` version. Check the grpcio version `pip freeze | grep grpcio`.
+[33m(raylet)[0m - The agent failed to start because of unexpected error or port conflict. Read the log `cat /tmp/ray/session_latest/logs/{dashboard_agent|runtime_env_agent}.log`. You can find the log file structure here https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#logging-directory-structure.
+[33m(raylet)[0m - The agent is killed by the OS (e.g., out of memory).
+[BENCHMARK] KHONG nap duoc checkpoint (Unknown error) -- dung heuristic cho tat ca tac tu.
+[BENCHMARK] --arms co nhanh can trung binh hanh dong RL nhung KHONG nap duoc --checkpoint -> dung.
+[33m(raylet)[0m [2026-10-09 12:45:16,803 E 23696 22772] (raylet.exe) raylet.cc:175: Raylet failed to accept new connection: The I/O operation has been aborted because of either a thread exit or an application request
+[33m(raylet)[0m [2026-10-09 12:45:16,803 C 23696 22772] (raylet.exe) experimental_mutable_object_provider.cc:34:  Check failed: object_manager_->SetErrorAll().code() == StatusCode::OK 
+[33m(raylet)[0m *** StackTrace Information ***
+[33m(raylet)[0m unknown
+[33m(raylet)[0m 
+[33m(raylet)[0m unknown[32m [repeated 7x across cluster] (Ray deduplicates logs by default. Set RAY_DEDUP_LOGS=0 to disable log deduplication, or see https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#log-deduplication for more options.)[0m

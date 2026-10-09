@@ -11,27 +11,27 @@ The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCa
 C:\Users\piece\.conda\envs\gpt_eco\lib\site-packages\ray\tune\logger\unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
 The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
   self._loggers.append(cls(self.config, self.logdir, self.trial))
-2026-10-09 09:24:10,860	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
-2026-10-09 09:24:13,220	INFO worker.py:1781 -- Started a local Ray instance.
-2026-10-09 09:24:16,848	INFO trainable.py:583 -- Restored on 127.0.0.1 from checkpoint: Checkpoint(filesystem=local, path=be/checkpoint/final_v037_seed42/iter_100)
-[BENCHMARK] Da nap checkpoint: be/checkpoint/final_v037_seed42/iter_100
+2026-10-09 13:01:41,798	WARNING deprecation.py:50 -- DeprecationWarning: `_enable_new_api_stack` has been deprecated. Use `AlgorithmConfig._enable_new_api_stack` instead. This will raise an error in the future!
+2026-10-09 13:01:44,917	INFO worker.py:1781 -- Started a local Ray instance.
+2026-10-09 13:01:47,798	INFO trainable.py:583 -- Restored on 127.0.0.1 from checkpoint: Checkpoint(filesystem=local, path=be/checkpoint/final_v037_seed909/iter_100)
+[BENCHMARK] Da nap checkpoint: be/checkpoint/final_v037_seed909/iter_100
 [bench-v2.1] Che do policy: LAY MAU (explore); gieo torch: step_policy
 
 Nhanh                       GDP  1-Gini   1-GPw  1-GPnet   1-GPc  %buoc am    k/N
-rl_learned               901.02   0.394   0.386    0.384   0.800      5.8%  0.002
-free_market              862.97   0.405   0.398    0.397   0.798      0.1%  0.000
-us_federal               866.67   0.341   0.307    0.297   0.792     83.2%  0.100
-saez                     707.39   0.251   0.242    0.278   0.684     96.4%  0.772
-free_market+rl_aux       863.96   0.412   0.404    0.404   0.801      0.1%  0.000
-us_federal+rl_aux        889.82   0.315   0.285    0.276   0.778     81.5%  0.106
-saez+rl_aux              741.66   0.203   0.166    0.210   0.615     96.2%  0.723
-rl_mean_fixed            898.51   0.388   0.380    0.379   0.796     26.1%  0.010
-flat_pit0.10_cit0        863.23   0.320   0.288    0.277   0.776     80.9%  0.100
-flat_pit0.20_cit0        864.31   0.237   0.225    0.211   0.757     93.1%  0.360
-flat_pit0.30_cit0        864.00   0.221   0.244    0.239   0.725     94.8%  0.602
-flat_pit0.50_cit0        727.54   0.198   0.181    0.220   0.602     95.4%  0.711
-flat_pit0_cit0.10        880.04   0.415   0.408    0.407   0.806      0.0%  0.000
-flat_pit0_cit0.20        886.73   0.401   0.393    0.392   0.798      0.3%  0.000
-flat_pit0_cit0.30        903.50   0.415   0.407    0.406   0.813      0.4%  0.000
-flat_pit0_cit0.50        942.38   0.369   0.361    0.359   0.805      0.3%  0.000
-[bench-v2.1] Da ghi: audits/paper_extras/v4_runs/v2/bench2_seed42_exp.json (sha256 truoc/sau trung: True)
+rl_learned               931.30   0.409   0.402    0.402   0.810      0.1%  0.000
+free_market              908.40   0.415   0.408    0.408   0.805      0.0%  0.000
+us_federal               919.91   0.364   0.348    0.347   0.807     67.9%  0.066
+saez                     726.18   0.263   0.270    0.288   0.724     93.5%  0.674
+free_market+rl_aux       909.98   0.417   0.410    0.410   0.806      0.0%  0.000
+us_federal+rl_aux        928.66   0.348   0.335    0.335   0.793     69.3%  0.065
+saez+rl_aux              758.38   0.270   0.251    0.260   0.661     92.6%  0.559
+rl_mean_fixed            931.76   0.413   0.406    0.406   0.809      5.2%  0.001
+flat_pit0.10_cit0        912.54   0.346   0.334    0.333   0.784     68.1%  0.066
+flat_pit0.20_cit0        925.77   0.293   0.281    0.284   0.760     82.1%  0.272
+flat_pit0.30_cit0        899.63   0.262   0.253    0.264   0.715     86.2%  0.468
+flat_pit0.50_cit0        745.22   0.269   0.254    0.265   0.642     91.0%  0.551
+flat_pit0_cit0.10        921.89   0.416   0.409    0.408   0.808      0.0%  0.000
+flat_pit0_cit0.20        933.58   0.415   0.408    0.408   0.809      0.0%  0.000
+flat_pit0_cit0.30        936.94   0.409   0.402    0.402   0.810      0.0%  0.000
+flat_pit0_cit0.50        963.91   0.411   0.404    0.404   0.820      0.0%  0.000
+[bench-v2.1] Da ghi: audits/paper_extras/v4_runs/v2/bench2_seed909_exp.json (sha256 truoc/sau trung: True)
